@@ -198,14 +198,14 @@ bool try_to_write_random_partition(int diskId, int objectId, int replicaId){
 
     // 判断整块磁盘的剩余空间
     int restSpace = 0;
-    for (int i = tags[1].startUnit; i < V + 1; ++i){
+    for (int i = V; i >= tags[1].startUnit; --i){
         if(diskUnits[i] == 0) restSpace ++;
         if(restSpace == object.size) break;
     }
     if(restSpace != object.size) return false;
 
-    // 写入磁盘：见缝插针
-    for(int i = tags[1].startUnit, cnt = 0; i < V + 1 && cnt < object.size; ++i){
+    // 写入磁盘：见缝插针（tricks: 从后到前见缝插针）
+    for(int i = V, cnt = 0; i >= tags[1].startUnit && cnt < object.size; --i){
         if(diskUnits[i] == 0) {
             diskUnits[i] = objectId;
             cnt++;
