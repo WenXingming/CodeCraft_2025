@@ -61,7 +61,7 @@ void pre_process_tags(){
 
 void delete_one_object(int objectId)
 {
-    Object& object = objects[objectId];
+    const Object& object = objects[objectId];
     for (int i = 1; i <= REP_NUM; ++i){
         for (int j = 1; j <= object.size; ++j){
             int diskId = object.replicaDiskId[i];
@@ -102,7 +102,7 @@ void delete_action()
     // 删除请求
     for (int i = 1; i <= nDelete; ++i){
         int objcetId = deleteObjects[i];
-        Object& object = objects[objcetId];
+        Object& object = objects[objcetId];         // 无法加 const，后面修改 requests
         queue<Request>& requests = object.requests;
 
         int size = requests.size();
@@ -119,7 +119,7 @@ void delete_action()
 bool try_to_write_main_partition(int diskId, int objectId, int replicaId){
     vector<int>& diskUnits = disks[diskId].diskUnits;
     Object& object = objects[objectId];
-    Tag& tag = tags[object.tagId];
+    const Tag& tag = tags[object.tagId];
 
     // 副本不能写入重复磁盘
     for (int i = 1; i <= REP_NUM; ++i){
@@ -279,12 +279,12 @@ void write_action(){
     // 与判题机交互
     for (int i = 1; i <= nWrite; ++i){
         int objectId = writeObjects[i];
-        Object& object = objects[objectId];
+        const Object& object = objects[objectId];   // 引用是个很危险的使用，它可以提高效率，但也有更改原始数据的风险。所以最好加 const
 
         printf("%d\n", object.id);
         for (int i = 1; i <= REP_NUM; ++i){
             printf("%d", object.replicaDiskId[i]);
-            vector<int> blocks = object.replicaBlockUnit[i];
+            const vector<int>& blocks = object.replicaBlockUnit[i];
             for (int j = 1; j <= object.size; j++){
                 printf(" %d", blocks[j]);
             }
@@ -303,7 +303,7 @@ void read_action()
     for (int i = 1; i <= nRead; i++) {
         scanf("%d%d", &requestId, &objectId);
 
-        Object& object = objects[objectId];
+        Object& object = objects[objectId];   // 这里不可以用 const...，C++还挺安全
         queue<Request>& requests = object.requests;
 
         Request request;
