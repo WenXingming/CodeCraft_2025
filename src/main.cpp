@@ -63,7 +63,7 @@ void delete_one_object(int objectId)
 {
     Object& object = objects[objectId];
     for (int i = 1; i <= REP_NUM; ++i){
-        for (int j = 1; j < object.size; ++j){
+        for (int j = 1; j <= object.size; ++j){
             int diskId = object.replicaDiskId[i];
             int unitId = object.replicaBlockUnit[i][j];
 
@@ -342,7 +342,7 @@ int main()
     for(int i = 1; i < tags.size(); ++i) {
         tags[i].id = i;
     }
-    
+
     objects.resize(MAX_OBJECT_NUM + 1);     // 待留写入时初始化每个 object 对象
     disks.assign(N + 1, Disk());
 
