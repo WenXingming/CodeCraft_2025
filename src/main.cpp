@@ -2,12 +2,6 @@
 
 // init tags
 void pre_process_tags(){
-    for(int i = 1; i < tags.size(); ++i) {
-        tags[i].id = i;
-        tags[i].writeMainDiskId = 1;
-        tags[i].writeFreeDiskId = 1;
-    }
-
     for (int k = 0; k < 3; ++k){
         for (int i = 1; i <= M; i++) {
             for (int j = 1; j <= (T - 1) / FRE_PER_SLICING + 1; j++) {
@@ -345,6 +339,10 @@ int main()
 
     // 初始化全局变量（vector 分配空间）
     tags.assign(M + 1, Tag());              // Tag 没有默认构造函数，使用默认参数
+    for(int i = 1; i < tags.size(); ++i) {
+        tags[i].id = i;
+    }
+    
     objects.resize(MAX_OBJECT_NUM + 1);     // 待留写入时初始化每个 object 对象
     disks.assign(N + 1, Disk());
 
