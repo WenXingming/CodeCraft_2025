@@ -103,7 +103,7 @@ void delete_action()
     for (int i = 1; i <= nDelete; ++i){
         int objcetId = deleteObjects[i];
         Object& object = objects[objcetId];
-        queue<Request> requests = object.requests;
+        queue<Request>& requests = object.requests;
 
         int size = requests.size();
         for (int i = 0; i < size; ++i){
