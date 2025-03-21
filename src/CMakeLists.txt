@@ -4,6 +4,9 @@ project(CodeCraft)                   # 不要修改
 set(CMAKE_CXX_STANDARD      17)      # 不要修改
 set(CMAKE_C_STANDARD        11)      # 不要修改
 
+set(CMAKE_CXX_COMPILER "g++")   # 设置C++编译器
+set(CMAKE_CXX_FLAGS "-O3")      # 设置编译选项为 -O3
+
 set(EXECUTABLE_OUTPUT_PATH  ${PROJECT_SOURCE_DIR}/) # 不要修改
 option(BUILD_SHARED_LIBS    ""  OFF) # 不要修改
 
