@@ -1,5 +1,78 @@
 #include "global.h"
 
+// init tags
+void sort_tags();
+void do_partition();
+void pre_input_process(){
+    for (int k = 0; k < 3; ++k){
+        for (int i = 1; i <= M; i++) {
+            for (int j = 1; j <= (T - 1) / FRE_PER_SLICING + 1; j++) {
+                if(k == 0) scanf("%d", &tags[i].freDel[j]);
+                else if(k == 1) scanf("%d", &tags[i].freWrite[j]);
+                else if(k == 2) scanf("%d", &tags[i].freRead[j]);
+            }
+        }
+    }
+    printf("OK\n");
+    fflush(stdout);
+
+    /* // test
+    printf("================================\n");
+    printf("%d %d %d %d %d\n", T, M, N, V, G);
+    for (int k = 0; k < 3; ++k){
+        for (int i = 1; i < tags.size(); i++) {
+            for (int j = 1; j < tags[i].freDel.size(); j++) {
+                if(k == 0) printf("%d ", tags[i].freDel[j]);
+                else if(k == 1) printf("%d ", tags[i].freWrite[j]);
+                else if(k == 2) printf("%d ", tags[i].freRead[j]);
+            }
+            printf("\n");
+        }
+        printf("\n");
+    }
+    printf("================================\n"); */
+
+    sort_tags();
+    do_partition();
+}
+
+// 按 read 量进行排序，read 多的放在磁盘前面。因为后续每个标签的分配区间满了的话，需要从磁盘的后向前插入对象
+// 为了根据 tagId 快速找到所属的 tag 对象，需要维护一个 hash 表
+vector<int> tagIdToTagsIndex;    // f(x): tagId 为 x 的对象，其所属 tag 对象在 tags 中的下标。注：这里 tagIdToTagsIndex(M+1) 没用！因为 M 还未确定呢
+void sort_tags(){
+    // 根据阅读量排序
+    std::sort(tags.begin() + 1, tags.end(), [](const Tag& a, const Tag& b) {
+        int totalRead1 = 0, totalRead2 = 0;
+        for (int i = 1; i < a.freRead.size(); ++i){
+            totalRead1 += a.freRead[i];
+            totalRead2 += b.freRead[i];
+        }
+        return totalRead1 >= totalRead2;
+    });
+    /* // Test
+    printf("Test: ========================\n");
+    for (int i = 1; i < tags.size(); ++i){
+        printf("%d\n", tags[i].id);
+    } */
+
+    // 维护 hash 表
+    tagIdToTagsIndex.assign(M + 1, 0); // 运行时分配内存，就要写在运行时。写在全局区没用！
+    for (int i = 1; i < tagIdToTagsIndex.size(); ++i) {
+        for (int j = 1; j < tags.size(); ++j) {
+            const Tag& tag = tags[j];
+            if (tag.id == i) {
+                tagIdToTagsIndex[i] = j;
+                break;
+            }
+        }
+    }
+    /* // Test
+    printf("Test: ========================\n");
+    for (int i = 1; i < tagIdToTagsIndex.size(); ++i){
+        printf("%d\n", tagIdToTagsIndex[i]);
+    } */
+}
+
 void do_partition(){
     // Do：计算 startUnit、endUnit
     // 计算每个标签占的空间、计算所有标签占的总容量
@@ -27,44 +100,12 @@ void do_partition(){
         tags[i].startUnit = tags[i - 1].endUnit;
         tags[i].endUnit = tags[i].startUnit + allocSpaces[i];
 
-        if(i == M && tags[i].endUnit > V) tags[i].endUnit = V;  // 不用 *0.9 分空闲分区的话，就要检查
+        if(i == M && tags[i].endUnit > V) tags[i].endUnit = V;  // 不用 *0.9 分空闲分区（用所有硬盘空间分区）的话，就要检查
     }
     /* // TEST:
     for (int i = 1; i < tags.size(); ++i){
         printf("tag %d's startUnit: %d, endUnit: %d\n", i, tags[i].startUnit, tags[i].endUnit);
     } */
-}
-
-// init tags
-void pre_process_tags(){
-    for (int k = 0; k < 3; ++k){
-        for (int i = 1; i <= M; i++) {
-            for (int j = 1; j <= (T - 1) / FRE_PER_SLICING + 1; j++) {
-                if(k == 0) scanf("%d", &tags[i].freDel[j]);
-                else if(k == 1) scanf("%d", &tags[i].freWrite[j]);
-                else if(k == 2) scanf("%d", &tags[i].freRead[j]);
-            }
-        }
-    }
-    printf("OK\n");
-    fflush(stdout);
-
-    do_partition();
-    /* // test
-    printf("================================\n");
-    printf("%d %d %d %d %d\n", T, M, N, V, G);
-    for (int k = 0; k < 3; ++k){
-        for (int i = 1; i < tags.size(); i++) {
-            for (int j = 1; j < tags[i].freDel.size(); j++) {
-                if(k == 0) printf("%d ", tags[i].freDel[j]);
-                else if(k == 1) printf("%d ", tags[i].freWrite[j]);
-                else if(k == 2) printf("%d ", tags[i].freRead[j]);
-            }
-            printf("\n");
-        }
-        printf("\n");
-    }
-    printf("================================\n"); */
 }
 
 void delete_one_object(int objectId)
@@ -107,7 +148,7 @@ void delete_action()
     }
     printf("%d\n", abortNum);
 
-    // 删除请求
+    // 删除请求（维护请求队列）
     for (int i = 1; i <= nDelete; ++i){
         int objcetId = deleteObjects[i];
         Object& object = objects[objcetId];         // 无法加 const，后面修改 requests
@@ -124,10 +165,11 @@ void delete_action()
     fflush(stdout);
 }
 
-bool try_to_write_main_partition(int diskId, int objectId, int replicaId){
+bool write_to_main_partition(int diskId, int objectId, int replicaId){
     vector<int>& diskUnits = disks[diskId].diskUnits;
     Object& object = objects[objectId];
-    const Tag& tag = tags[object.tagId];
+    int tagIndex = tagIdToTagsIndex[object.tagId];
+    const Tag& tag = tags[tagIndex];
 
     // 副本不能写入重复磁盘
     for (int i = 1; i <= REP_NUM; ++i){
@@ -156,10 +198,11 @@ bool try_to_write_main_partition(int diskId, int objectId, int replicaId){
     return true;
 }
 
-bool try_to_write_free_partition(int diskId, int objectId, int replicaId){
+bool write_to_free_partition(int diskId, int objectId, int replicaId){
     vector<int>& diskUnits = disks[diskId].diskUnits;
     Object& object = objects[objectId];
-    Tag& tag = tags[object.tagId];
+    int tagIndex = tagIdToTagsIndex[object.tagId];
+    const Tag& tag = tags[tagIndex];
 
     // 副本不能写入重复磁盘
     for (int i = 1; i <= REP_NUM; ++i){
@@ -188,10 +231,11 @@ bool try_to_write_free_partition(int diskId, int objectId, int replicaId){
     return true;
 }
 
-bool try_to_write_random_partition(int diskId, int objectId, int replicaId){
+bool write_to_random_partition(int diskId, int objectId, int replicaId){
     vector<int>& diskUnits = disks[diskId].diskUnits;
     Object& object = objects[objectId];
-    Tag& tag = tags[object.tagId];
+    int tagIndex = tagIdToTagsIndex[object.tagId];
+    const Tag& tag = tags[tagIndex];
 
     // 副本不能写入重复磁盘
     for (int i = 1; i <= REP_NUM; ++i){
@@ -230,27 +274,27 @@ bool write_one_object(int objectId){
         bool isWriteSucess = false;
         for (int i = 1; i <= N; ++i) {
             int writeDiskId = tag.update_main_disk_id();
-            if (try_to_write_main_partition(writeDiskId, objectId, k)) {
+            if (write_to_main_partition(writeDiskId, objectId, k)) {
                 isWriteSucess = true;
                 break;
             }
         }
         if(isWriteSucess) continue;
 
-        /* // 遍历所有磁盘，尝试写入空余分区
+        // 遍历所有磁盘，尝试写入空余分区
         for (int i = 1; i <= N; ++i) {
             int writeDiskId = tag.update_free_disk_id();
-            if (try_to_write_free_partition(writeDiskId, objectId, k)) {
+            if (write_to_free_partition(writeDiskId, objectId, k)) {
                 isWriteSucess = true;
                 break;
             }
         }
-        if(isWriteSucess) continue; */
+        if(isWriteSucess) continue;
 
         // 无奈，只能随机找位置写入
         for (int i = 1; i <= N; ++i){
             int writeDiskId = tag.update_random_disk_id();
-            if(try_to_write_random_partition(writeDiskId, objectId, k)){
+            if(write_to_random_partition(writeDiskId, objectId, k)){
                 isWriteSucess = true;
                 break;
             }
@@ -355,7 +399,7 @@ int main()
     disks.assign(N + 1, Disk());
 
 
-    pre_process_tags();
+    pre_input_process();
     
     // for (int i = 1; i <= N; i++) {
     //     disk_point[i] = 1;
