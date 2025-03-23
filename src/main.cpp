@@ -1,34 +1,6 @@
 #include "global.h"
 
-// init tags
-void pre_process_tags(){
-    for (int k = 0; k < 3; ++k){
-        for (int i = 1; i <= M; i++) {
-            for (int j = 1; j <= (T - 1) / FRE_PER_SLICING + 1; j++) {
-                if(k == 0) scanf("%d", &tags[i].freDel[j]);
-                else if(k == 1) scanf("%d", &tags[i].freWrite[j]);
-                else if(k == 2) scanf("%d", &tags[i].freRead[j]);
-            }
-        }
-    }
-    printf("OK\n");
-    fflush(stdout);
-    /* // test
-    /* printf("================================\n");
-    printf("%d %d %d %d %d\n", T, M, N, V, G);
-    for (int k = 0; k < 3; ++k){
-        for (int i = 1; i < tags.size(); i++) {
-            for (int j = 1; j < tags[i].freDel.size(); j++) {
-                if(k == 0) printf("%d ", tags[i].freDel[j]);
-                else if(k == 1) printf("%d ", tags[i].freWrite[j]);
-                else if(k == 2) printf("%d ", tags[i].freRead[j]);
-            }
-            printf("\n");
-        }
-        printf("\n");
-    }
-    printf("================================\n"); */
-
+void do_partition(){
     // Do：计算 startUnit、endUnit
     // 计算每个标签占的空间、计算所有标签占的总容量
     vector<int> tagSpaces(tags.size());
@@ -47,16 +19,52 @@ void pre_process_tags(){
     } */
         
     // 根据每个标签的百分比，计算应该在磁盘上分配的容量；NOTE: 10% 剩余。并计算每个标签的区间
+    // Todo：根据 read 总量进行排序，高的分区在前面。因为 write_random 从后向前
     vector<int> allocSpaces(tags.size());
     for (int i = 1; i < tags.size(); ++i){
-        allocSpaces[i] = V * 0.9 * (static_cast<double>(tagSpaces[i]) / totalSpace);
+        // allocSpaces[i] = V * 0.9 * (static_cast<double>(tagSpaces[i]) / totalSpace);
+        allocSpaces[i] = V * (static_cast<double>(tagSpaces[i]) / totalSpace);
         tags[i].startUnit = tags[i - 1].endUnit;
         tags[i].endUnit = tags[i].startUnit + allocSpaces[i];
+
+        if(i == M && tags[i].endUnit > V) tags[i].endUnit = V;  // 不用 *0.9 分空闲分区的话，就要检查
     }
     /* // TEST:
     for (int i = 1; i < tags.size(); ++i){
         printf("tag %d's startUnit: %d, endUnit: %d\n", i, tags[i].startUnit, tags[i].endUnit);
     } */
+}
+
+// init tags
+void pre_process_tags(){
+    for (int k = 0; k < 3; ++k){
+        for (int i = 1; i <= M; i++) {
+            for (int j = 1; j <= (T - 1) / FRE_PER_SLICING + 1; j++) {
+                if(k == 0) scanf("%d", &tags[i].freDel[j]);
+                else if(k == 1) scanf("%d", &tags[i].freWrite[j]);
+                else if(k == 2) scanf("%d", &tags[i].freRead[j]);
+            }
+        }
+    }
+    printf("OK\n");
+    fflush(stdout);
+
+    do_partition();
+    /* // test
+    printf("================================\n");
+    printf("%d %d %d %d %d\n", T, M, N, V, G);
+    for (int k = 0; k < 3; ++k){
+        for (int i = 1; i < tags.size(); i++) {
+            for (int j = 1; j < tags[i].freDel.size(); j++) {
+                if(k == 0) printf("%d ", tags[i].freDel[j]);
+                else if(k == 1) printf("%d ", tags[i].freWrite[j]);
+                else if(k == 2) printf("%d ", tags[i].freRead[j]);
+            }
+            printf("\n");
+        }
+        printf("\n");
+    }
+    printf("================================\n"); */
 }
 
 void delete_one_object(int objectId)
@@ -229,7 +237,7 @@ bool write_one_object(int objectId){
         }
         if(isWriteSucess) continue;
 
-        // 遍历所有磁盘，尝试写入空余分区
+        /* // 遍历所有磁盘，尝试写入空余分区
         for (int i = 1; i <= N; ++i) {
             int writeDiskId = tag.update_free_disk_id();
             if (try_to_write_free_partition(writeDiskId, objectId, k)) {
@@ -237,7 +245,7 @@ bool write_one_object(int objectId){
                 break;
             }
         }
-        if(isWriteSucess) continue;
+        if(isWriteSucess) continue; */
 
         // 无奈，只能随机找位置写入
         for (int i = 1; i <= N; ++i){
