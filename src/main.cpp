@@ -358,6 +358,73 @@ void write_action(){
     fflush(stdout);
 }
 
+void update_remain_token(){ // 每个时间片初始化所有磁头令牌为 G
+    for(int i = 1; i < disks.size(); ++i){
+        disks[i].diskPoint.remainToken = G;
+    }
+    assert(disks[1].diskPoint.remainToken == G);
+}
+
+bool do_pass(int diskId){
+    Disk& disk = disks[diskId];
+    DiskPoint& diskPoint = disk.diskPoint;
+    if(diskPoint.remainToken < 1) return false;
+
+    diskPoint.position = diskPoint.position % V + 1;
+    diskPoint.preAction = 'p';
+    diskPoint.preCostToken = 1;
+    diskPoint.remainToken -= 1;
+    diskPoint.cmd += 'p';
+    return true;
+}
+
+bool do_jump(int diskId, int unitId){
+    Disk& disk = disks[diskId];
+    DiskPoint& diskPoint = disk.diskPoint;
+    if(diskPoint.remainToken < G) return false;
+
+    diskPoint.position = unitId;
+    diskPoint.preAction = 'j';
+    diskPoint.preCostToken = G;
+    diskPoint.remainToken = 0;
+    diskPoint.cmd = "j " + std::to_string(unitId);
+    return true;
+}
+
+void update_most_request_tag_and_disk_point(int _preTag = preTag){
+    if(TIMESTAMP % 10 != 0) return; // Important：10 是需要调参的，确保这个间隔可以遍历完一个区间
+    // 更新读取的 tag
+    int mostRequestTag = preTag;
+    for (int i = 1; i < tagIdRequestNum.size(); ++i){
+        if(tagIdRequestNum[i] >= tagIdRequestNum[preTag]){
+            mostRequestTag = i;
+        }
+    }
+    preTag = mostRequestTag;
+    // 移动磁头到该 tag 的区间
+    const int& tagsIndex = tagIdToTagsIndex[preTag];
+    const Tag& tag = tags[tagsIndex];
+    const int& startUnit = tag.startUnit;
+    // 对于每一个磁头，计算消耗，判断是用 j or p
+    for (int i = 1; i < disks.size(); ++i){
+        Disk& disk = disks[i];
+        DiskPoint& diskPoint = disk.diskPoint;
+        int distance = ((startUnit - diskPoint.position) + V) % V; // 计算 pass 的步数。磁头只能向后 pass，startUnit - position > or < 0
+        
+        if(distance >= diskPoint.remainToken){ // jump
+            if(!do_jump(i, startUnit)) assert(false);
+            continue;
+        }
+        while(distance--){  // 非 jump 就 pass
+            if(!do_pass(i)) assert(false);
+        }
+    }
+}
+
+bool need_read(){
+
+}
+
 void read_action()
 {
     // 处理输入。维护请求队列
@@ -382,10 +449,24 @@ void read_action()
             printf("%d\n", request.id);
         } */
     }
-    
+
+    update_remain_token();
+    update_most_request_tag_and_disk_point();
+    // 每个磁头，并行开始读取
+    // 先判断是否需要读取该块
+    for(int i = 1; i < disks.size(); ++i){
+        const auto& disk = disks[i].diskUnits;
+        DiskPoint& diskPoint = disks[i].diskPoint;
+
+        bool canRead = true;
+        while(canRead){
+            if(!need_read()){
+                diskPoint.cmd += 'p';
+            }
+        }
+    }
 
 
-    
     for (int i = 1; i < disks.size(); ++i){
         printf("#\n");
     }

@@ -54,13 +54,14 @@ struct Request{
 };
 
 struct Object{  
-    int id;     // 对象 id
-    int size;   // 对象 size
-    int tagId;    // 对象 tag
-    vector<int> replicaDiskId;                // f(i) = 第 i 个副本的所在磁盘号
+    int id;         // 对象 id
+    int size;       // 对象 size
+    int tagId;      // 对象 tag
+    vector<int> replicaDiskId;              // f(i) = 第 i 个副本的所在磁盘号
     vector<vector<int>> replicaBlockUnit;   // f(i,j) = 第 i 个副本、第 j 个块所在的磁盘（块）单元号
 
     queue<Request> requests;                // 未完成的请求队列挂在对象上（用队列，是为了先来先处理）
+    queue<Request> timeoutRequests;         // 这里放超时的 request
 
     Object(){}
     Object(int _id, int _size, int _tagId){
@@ -130,17 +131,20 @@ struct DiskPoint{
     char preAction;     // 上一个动作
     int preCostToken;   // 上一个消耗的 Token
 
-    DiskPoint(int _position = 1, int _remainToken = 0, char _preAction = 0, int _preCostToken = 0){ // 写了默认参数，就不必写默认构造，否则编译报错（多个默认构造函数）
+    string cmd;         // 每个磁头的命令
+
+    DiskPoint(int _position = 1, int _remainToken = 0, char _preAction = 0, int _preCostToken = 0, string _cmd = ""){ // 写了默认参数，就不必写默认构造，否则编译报错（多个默认构造函数）
         this->position = _position;
         this->remainToken = _remainToken;
         this->preAction = _preAction;
         this->preCostToken = _preCostToken;
+        this->cmd = _cmd;
     }
 };
 
 struct Disk{
     vector<int> diskUnits;       // MAX_DISK_SIZE = 16384 B
-    DiskPoint diskPoint;    // 4 + 4 + 1 + 4 = 13 B
+    DiskPoint diskPoint;    // 4 + 4 + 1 + 4 = 13 B 
 
     Disk(int& _V = V){
         this->diskUnits.assign(_V + 1, 0);    // 0 代表为空
@@ -160,3 +164,4 @@ vector<Object> objects;     // (4 + 4 + 4 + 4*3 + 3*5) * MAX_OBJECT_NUM = 3.9 * 
 vector<Disk> disks;         // MAX_DISK_NUM * (MAX_DISK_SIZE + 13B) ≈ 10 * 16384 = 1.6 * 10^5 ≈ 0.16 MB
 
 vector<int> tagIdRequestNum; // f(x): tagId 为 x 的请求数量
+int preTag = 1;
