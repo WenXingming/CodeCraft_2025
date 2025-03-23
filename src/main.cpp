@@ -36,10 +36,7 @@ void pre_input_process(){
     do_partition();
 }
 
-// 按 read 量进行排序，read 多的放在磁盘前面。因为后续每个标签的分配区间满了的话，需要从磁盘的后向前插入对象
-// 为了根据 tagId 快速找到所属的 tag 对象，需要维护一个 hash 表
-vector<int> tagIdToTagsIndex;    // f(x): tagId 为 x 的对象，其所属 tag 对象在 tags 中的下标。注：这里 tagIdToTagsIndex(M+1) 没用！因为 M 还未确定呢
-void sort_tags(){
+void sort_tags(){ // 根据 read 总量进行排序，高的分区在前面。因为 write_to_random_partition 从后向前
     // 根据阅读量排序
     std::sort(tags.begin() + 1, tags.end(), [](const Tag& a, const Tag& b) {
         int totalRead1 = 0, totalRead2 = 0;
@@ -56,7 +53,6 @@ void sort_tags(){
     } */
 
     // 维护 hash 表
-    tagIdToTagsIndex.assign(M + 1, 0); // 运行时分配内存，就要写在运行时。写在全局区没用！
     for (int i = 1; i < tagIdToTagsIndex.size(); ++i) {
         for (int j = 1; j < tags.size(); ++j) {
             const Tag& tag = tags[j];
@@ -73,8 +69,7 @@ void sort_tags(){
     } */
 }
 
-void do_partition(){
-    // Do：计算 startUnit、endUnit
+void do_partition(){ // Do：计算 startUnit、endUnit
     // 计算每个标签占的空间、计算所有标签占的总容量
     vector<int> tagSpaces(tags.size());
     int totalSpace = 0;
@@ -85,14 +80,8 @@ void do_partition(){
         }
         totalSpace += tagSpaces[i];
     }
-    /* // test
-    for (int i = 1; i < tags.size(); ++i){
-        printf("==============================\n");
-        printf("%d\n", tags[i].writeSpace);
-    } */
         
-    // 根据每个标签的百分比，计算应该在磁盘上分配的容量；NOTE: 10% 剩余。并计算每个标签的区间
-    // Todo：根据 read 总量进行排序，高的分区在前面。因为 write_random 从后向前
+    // 根据每个标签的百分比，计算应该在磁盘上分配的容量，并计算得到每个标签的区间。NOTE: 10% 剩余（已取消）。
     vector<int> allocSpaces(tags.size());
     for (int i = 1; i < tags.size(); ++i){
         // allocSpaces[i] = V * 0.9 * (static_cast<double>(tagSpaces[i]) / totalSpace);
@@ -148,15 +137,14 @@ void delete_action()
     }
     printf("%d\n", abortNum);
 
-    // 删除请求（维护请求队列）
     for (int i = 1; i <= nDelete; ++i){
         int objcetId = deleteObjects[i];
-        Object& object = objects[objcetId];         // 无法加 const，后面修改 requests
+        Object& object = objects[objcetId];     // 无法加 const，后面修改 requests
         queue<Request>& requests = object.requests;
 
         int size = requests.size();
         for (int i = 0; i < size; ++i){
-            Request request = requests.front();
+            Request request = requests.front(); // 删除请求（维护请求队列）
             requests.pop();
             printf("%d\n", request.id);
         }
@@ -198,7 +186,7 @@ bool write_to_main_partition(int diskId, int objectId, int replicaId){
     return true;
 }
 
-bool write_to_free_partition(int diskId, int objectId, int replicaId){
+/* bool write_to_free_partition(int diskId, int objectId, int replicaId){
     vector<int>& diskUnits = disks[diskId].diskUnits;
     Object& object = objects[objectId];
     int tagIndex = tagIdToTagsIndex[object.tagId];
@@ -229,7 +217,7 @@ bool write_to_free_partition(int diskId, int objectId, int replicaId){
         }
     }
     return true;
-}
+} */
 
 bool write_to_random_partition(int diskId, int objectId, int replicaId){
     vector<int>& diskUnits = disks[diskId].diskUnits;
@@ -281,7 +269,7 @@ bool write_one_object(int objectId){
         }
         if(isWriteSucess) continue;
 
-        // 遍历所有磁盘，尝试写入空余分区
+        /* // 遍历所有磁盘，尝试写入空余分区
         for (int i = 1; i <= N; ++i) {
             int writeDiskId = tag.update_free_disk_id();
             if (write_to_free_partition(writeDiskId, objectId, k)) {
@@ -289,7 +277,7 @@ bool write_one_object(int objectId){
                 break;
             }
         }
-        if(isWriteSucess) continue;
+        if(isWriteSucess) continue; */
 
         // 无奈，只能随机找位置写入
         for (int i = 1; i <= N; ++i){
@@ -349,6 +337,7 @@ void write_action(){
 
 void read_action()
 {
+    // 处理输入。维护请求队列
     int nRead;
     int requestId, objectId;
     scanf("%d", &nRead);
@@ -357,14 +346,22 @@ void read_action()
 
         Object& object = objects[objectId];   // 这里不可以用 const...，C++还挺安全
         queue<Request>& requests = object.requests;
-
         Request request;
         request.id = requestId;
         request.objectId = objectId;
         request.arriveTime = TIMESTAMP;
         request.hasRead = vector<bool>(object.size + 1, false);
-        object.requests.push(request);
+        requests.push(request);
+        // test
+        // while(!requests.empty()){
+        //     Request req = requests.front();
+        //     requests.pop();
+        //     printf("%d\n", request.id);
+        // }
     }
+    
+
+
     
     for (int i = 1; i < disks.size(); ++i){
         printf("#\n");
@@ -394,6 +391,8 @@ int main()
     for(int i = 1; i < tags.size(); ++i) {
         tags[i].id = i;
     }
+    tagIdToTagsIndex.assign(M + 1, 0); // 运行时 M 有值，分配内存就要写在运行时。写在全局区没用会有 bug！
+
 
     objects.resize(MAX_OBJECT_NUM + 1);     // 待留写入时初始化每个 object 对象
     disks.assign(N + 1, Disk());
