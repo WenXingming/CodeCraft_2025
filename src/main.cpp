@@ -29,8 +29,7 @@ void pre_input_process(){
             printf("\n");
         }
         printf("\n");
-    }
-    printf("================================\n"); */
+    } */
 
     sort_tags();
     do_partition();
@@ -92,8 +91,10 @@ void do_partition(){ // Do：计算 startUnit、endUnit
         if(i == M && tags[i].endUnit > V) tags[i].endUnit = V;  // 不用 *0.9 分空闲分区（用所有硬盘空间分区）的话，就要检查
     }
     /* // TEST:
+    printf("Test: ===========================\n");
     for (int i = 1; i < tags.size(); ++i){
-        printf("tag %d's startUnit: %d, endUnit: %d\n", i, tags[i].startUnit, tags[i].endUnit);
+        printf("%d\n", tagSpaces[i]);
+        printf("tag %d's startUnit: %d, endUnit: %d\n", tags[i].id, tags[i].startUnit, tags[i].endUnit);
     } */
 }
 
@@ -120,15 +121,14 @@ void delete_action()
     for (int i = 1; i <= nDelete; i++) {
         scanf("%d", &deleteObjects[i]);
     }
-
     // 磁盘上进行删除
     for (int i = 1; i <= nDelete; i++) {
         int objectId = deleteObjects[i];
         delete_one_object(objectId);
     }
-
-    // 判题机交互（并维护请求数据结构）
-    int abortNum = 0;
+    // 判题机交互
+    // 计算撤销请求数量
+    int abortNum = 0;   
     for (int i = 1; i <= nDelete; ++i){
         int objcetId = deleteObjects[i];
         Object& object = objects[objcetId];
@@ -136,18 +136,23 @@ void delete_action()
         abortNum += object.requests.size();
     }
     printf("%d\n", abortNum);
-
-    for (int i = 1; i <= nDelete; ++i){
+    // 打印撤销请求 id（并维护请求数据结构）
+    for (int i = 1; i <= nDelete; ++i){ 
         int objcetId = deleteObjects[i];
         Object& object = objects[objcetId];     // 无法加 const，后面修改 requests
         queue<Request>& requests = object.requests;
 
-        int size = requests.size();
+        /* int size = requests.size();
         for (int i = 0; i < size; ++i){
-            Request request = requests.front(); // 删除请求（维护请求队列）
+            Request request = requests.front();
             requests.pop();
             printf("%d\n", request.id);
-        }
+        } */
+       while(!requests.empty()){
+            Request& request = requests.front();
+            requests.pop();
+            printf("%d\n", request.id);
+       }
     }
 
     fflush(stdout);
@@ -352,12 +357,12 @@ void read_action()
         request.arriveTime = TIMESTAMP;
         request.hasRead = vector<bool>(object.size + 1, false);
         requests.push(request);
-        // test
-        // while(!requests.empty()){
-        //     Request req = requests.front();
-        //     requests.pop();
-        //     printf("%d\n", request.id);
-        // }
+        /* // test
+        while(!requests.empty()){
+            Request req = requests.front();
+            requests.pop();
+            printf("%d\n", request.id);
+        } */
     }
     
 
