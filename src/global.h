@@ -45,7 +45,7 @@ struct Request{
     vector<bool> hasRead;   // f(i)：对象的第 i 个块是否读取
 
     Request(){}
-    Request(int _id, int _objectId, int _arriveTime, int _objectSize){
+    Request(int _id, int _objectId, int _arriveTime, int _objectSize){ // 默认参数只能自右往左写
         this->id = _id;
         this->objectId = _objectId;
         this->arriveTime = _arriveTime;
@@ -78,7 +78,7 @@ struct Tag{
     int id;
     // 管理标签写入磁盘
     int writeMainDiskId;    // 拥有此 id 标签的对象写入主分区时的磁盘号
-    int writeFreeDiskId;    // 拥有此 id 标签的对象写入空余分区时的磁盘号
+    // int writeFreeDiskId;    // 拥有此 id 标签的对象写入空余分区时的磁盘号
     int writeRandomDiskId;
     // NOTE: [)
     int startUnit;          // 此 id 标签的对象在磁盘分区（主分区）上的起始位置
@@ -88,10 +88,10 @@ struct Tag{
     vector<int> freWrite;
     vector<int> freRead;
     // 非必要不提供默认构造函数。可以使用【默认参数】
-    Tag(/* int& _id,  */int _writeMainDiskId = 1, int _writeFreeDiskId = 1, int _writeRandomDiskId = 1, int _startUnit = 1, int _endUnit = 1) {
+    Tag(/* int& _id,  */int _writeMainDiskId = 1, /* int _writeFreeDiskId = 1, */ int _writeRandomDiskId = 1, int _startUnit = 1, int _endUnit = 1) {
         /* this->id = _id; */
         this->writeMainDiskId = _writeMainDiskId;
-        this->writeFreeDiskId = _writeFreeDiskId;
+        // this->writeFreeDiskId = _writeFreeDiskId;
         this->writeRandomDiskId = _writeRandomDiskId;
         this->startUnit = _startUnit;
         this->endUnit = _endUnit;
@@ -100,7 +100,6 @@ struct Tag{
         this->freWrite.assign((T - 1) / FRE_PER_SLICING + 2, 0);
         this->freRead.assign((T - 1) / FRE_PER_SLICING + 2, 0);
     }
-    // 计算 writeSpace. NOTE: 前提是 freDel、freWrite、freRead 初始化完成了
 
     // 得到当前写入的主分区所在磁盘
     int update_main_disk_id(){
@@ -109,12 +108,12 @@ struct Tag{
         return tmp;
     }
 
-    // 得到当前写入的空余分区所在磁盘
+    /* // 得到当前写入的空余分区所在磁盘
     int update_free_disk_id(){
         int tmp = writeFreeDiskId;
         writeFreeDiskId = writeFreeDiskId % N + 1;
         return tmp;
-    }
+    } */
 
     // 随机写入的磁盘进行轮转
     int update_random_disk_id(){
@@ -131,8 +130,7 @@ struct DiskPoint{
     char preAction;     // 上一个动作
     int preCostToken;   // 上一个消耗的 Token
 
-    DiskPoint(){}
-    DiskPoint(int _position, int _remainToken, char _preAction, int _preCostToken){
+    DiskPoint(int _position = 1, int _remainToken = 0, char _preAction = 0, int _preCostToken = 0){ // 写了默认参数，就不必写默认构造，否则编译报错（多个默认构造函数）
         this->position = _position;
         this->remainToken = _remainToken;
         this->preAction = _preAction;
@@ -160,3 +158,5 @@ vector<int> tagIdToTagsIndex;
 
 vector<Object> objects;     // (4 + 4 + 4 + 4*3 + 3*5) * MAX_OBJECT_NUM = 3.9 * 10^7 B ≈ 39 MB
 vector<Disk> disks;         // MAX_DISK_NUM * (MAX_DISK_SIZE + 13B) ≈ 10 * 16384 = 1.6 * 10^5 ≈ 0.16 MB
+
+vector<int> tagIdRequestNum; // f(x): tagId 为 x 的请求数量
