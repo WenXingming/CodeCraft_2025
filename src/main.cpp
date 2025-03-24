@@ -29,21 +29,6 @@ void pre_input_process(){
     }
     printf("OK\n");
     fflush(stdout);
-
-    /* // test
-    printf("================================\n");
-    printf("%d %d %d %d %d\n", T, M, N, V, G);
-    for (int k = 0; k < 3; ++k){
-        for (int i = 1; i < tags.size(); i++) {
-            for (int j = 1; j < tags[i].freDel.size(); j++) {
-                if(k == 0) printf("%d ", tags[i].freDel[j]);
-                else if(k == 1) printf("%d ", tags[i].freWrite[j]);
-                else if(k == 2) printf("%d ", tags[i].freRead[j]);
-            }
-            printf("\n");
-        }
-        printf("\n");
-    } */
 }
 
 void sort_tags(){ // 根据 read 总量进行排序，高的分区在前面。因为 write_to_random_partition 从后向前
@@ -56,13 +41,7 @@ void sort_tags(){ // 根据 read 总量进行排序，高的分区在前面。�
         }
         return totalRead1 >= totalRead2;
     });
-    /* // Test
-    printf("Test: ========================\n");
-    for (int i = 1; i < tags.size(); ++i){
-        printf("%d\n", tags[i].id);
-    } */
-
-    // 维护 hash 表
+    // 维护 hash 表，快速根据 tagId 找到相应 tag 对象在 tags 的索引
     for (int i = 1; i < tagIdToTagsIndex.size(); ++i) {
         for (int j = 1; j < tags.size(); ++j) {
             const Tag& tag = tags[j];
@@ -72,11 +51,6 @@ void sort_tags(){ // 根据 read 总量进行排序，高的分区在前面。�
             }
         }
     }
-    /* // Test
-    printf("Test: ========================\n");
-    for (int i = 1; i < tagIdToTagsIndex.size(); ++i){
-        printf("%d\n", tagIdToTagsIndex[i]);
-    } */
 }
 
 void do_partition(){ // Do：计算 startUnit、endUnit
@@ -101,12 +75,6 @@ void do_partition(){ // Do：计算 startUnit、endUnit
 
         if(i == M && tags[i].endUnit > V) tags[i].endUnit = V + 1;  // 不用 *0.9 分空闲分区（用所有硬盘空间分区）的话，就要检查
     }
-    /* // TEST:
-    printf("Test: ===========================\n");
-    for (int i = 1; i < tags.size(); ++i){
-        printf("%d\n", tagSpaces[i]);
-        printf("tag %d's startUnit: %d, endUnit: %d\n", tags[i].id, tags[i].startUnit, tags[i].endUnit);
-    } */
 }
 
 void timestamp_action() // 时间片对齐操作
@@ -160,18 +128,11 @@ void delete_action()
         int objcetId = deleteObjects[i];
         Object& object = objects[objcetId];     // 无法加 const，后面修改 requests
         deque<Request>& requests = object.requests;
-
-        /* int size = requests.size();
-        for (int i = 0; i < size; ++i){
-            Request request = requests.front();
-            requests.pop();
-            printf("%d\n", request.id);
-        } */
-       while(!requests.empty()){
+        while (!requests.empty()) {
             Request& request = requests.front();
             requests.pop_front();
             printf("%d\n", request.id);
-       }
+        }
     }
 
     fflush(stdout);
@@ -198,7 +159,6 @@ bool write_to_main_partition(int diskId, int objectId, int replicaId){
         if(diskUnits[i] == 0) {
             diskUnits[i] = objectId;
             cnt++;
-
             // 写入时注意要维护 object 信息
             object.replicaDiskId[replicaId] = diskId;
             object.replicaBlockUnit[replicaId][cnt] = i; // 注意 cnt++ 了
@@ -411,13 +371,6 @@ int cal_block_id(const int& objectId, const int& diskId, const int& unitId){
             blockId = i;
             break;
         }
-        /* // 打印
-        printf("TEST: =============================\n");
-        printf("unitId: %d\n", unitId);
-        for(int j = 1; j < object.replicaBlockUnit[replicaId].size(); ++j){
-            printf("%d ", object.replicaBlockUnit[replicaId][j]);
-        }
-        printf("\n"); */
     }
     assert(blockId != 0);
     return blockId;
@@ -442,13 +395,13 @@ bool check_request_is_done(const Request& _request){
 
 void read_action()
 {
-    // 处理输入。维护请求队列
+    // 处理输入
     int nRead;
     int requestId, objectId;
     scanf("%d", &nRead);
     for (int i = 1; i <= nRead; i++) {
         scanf("%d%d", &requestId, &objectId);
-
+        // 维护请求队列
         deque<Request>& requests = objects[objectId].requests;
         Request request;
         request.id = requestId;
@@ -456,7 +409,6 @@ void read_action()
         request.arriveTime = TIMESTAMP;
         request.hasRead = vector<bool>(objects[objectId].size + 1, false);
         requests.push_back(request);
-
         // 每来一个请求，维护当前请求趋势图
         const int& tagId = objects[objectId].tagId;
         tagIdRequestNum[tagId]++;
