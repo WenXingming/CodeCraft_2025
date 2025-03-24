@@ -72,7 +72,6 @@ struct Object{
 
         this->replicaDiskId.assign(REP_NUM + 1, 0);
         this->replicaBlockUnit.assign(REP_NUM + 1, vector<int>(size + 1, 0));
-        this->requests;
     }
 };
 

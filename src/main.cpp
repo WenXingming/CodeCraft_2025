@@ -338,9 +338,8 @@ void write_action(){
         printf("%d\n", object.id);
         for (int i = 1; i <= REP_NUM; ++i){
             printf("%d", object.replicaDiskId[i]);
-            const vector<int>& blocks = object.replicaBlockUnit[i];
             for (int j = 1; j <= object.size; j++){
-                printf(" %d", blocks[j]);
+                printf(" %d", object.replicaBlockUnit[i][j]);
             }
             printf("\n");
         }
@@ -360,8 +359,8 @@ void update_disk_point(){ // 每个时间片初始化所有磁头令牌为 G、�
 bool do_pass(const int& diskId){
     Disk& disk = disks[diskId];
     DiskPoint& diskPoint = disk.diskPoint;
-    if(diskPoint.remainToken < 1) return false;
 
+    if(diskPoint.remainToken < 1) return false;
     diskPoint.position = diskPoint.position % V + 1;
     diskPoint.preAction = 'p';
     diskPoint.preCostToken = 1;
@@ -373,8 +372,8 @@ bool do_pass(const int& diskId){
 bool do_jump(const int& diskId, const int& unitId){
     Disk& disk = disks[diskId];
     DiskPoint& diskPoint = disk.diskPoint;
-    if(diskPoint.remainToken < G) return false;
 
+    if(diskPoint.remainToken < G) return false;
     diskPoint.position = unitId;
     diskPoint.preAction = 'j';
     diskPoint.preCostToken = G;
@@ -391,8 +390,8 @@ bool do_read(int diskId){
     int cost = 0;
     if(diskPoint.preAction != 'r' || TIMESTAMP == 1) cost = 64;
     else cost = std::max(16, static_cast<int>(std::ceil(diskPoint.preCostToken * 0.8)));
-    if(diskPoint.remainToken < cost) return false;
 
+    if(diskPoint.remainToken < cost) return false;
     diskPoint.position = diskPoint.position % V + 1;
     diskPoint.preAction = 'r';
     diskPoint.preCostToken = cost;
@@ -402,7 +401,7 @@ bool do_read(int diskId){
 }
 
 void update_most_request_tag_and_disk_point(int _preTag = preTag){
-    if(TIMESTAMP % 10 != 0) return; // Important：10 是需要调参的，确保这个间隔可以遍历完一个区间
+    if(TIMESTAMP % 3 != 0) return; // Important：10 是需要调参的，确保这个间隔可以遍历完一个区间
     // 更新读取的 tag
     int mostRequestTag = preTag;
     for (int i = 1; i < tagIdRequestNum.size(); ++i){
@@ -441,20 +440,24 @@ int cal_block_id(const int& objectId, const int& diskId, const int& unitId){
             break;
         }
     }
-    // Test
-    printf("TEST: ==========================\n");
-    printf("replicaId: %d\n", replicaId);
+    assert(replicaId != 0);
     // 得到块的 blockId
     int blockId = 0;
     for (int i = 1; i < object.replicaBlockUnit[replicaId].size(); ++i){
+        assert(object.size + 1 == object.replicaBlockUnit[replicaId].size());
         if(object.replicaBlockUnit[replicaId][i] == unitId){
             blockId = i;
             break;
         }
+        /* // 打印
+        printf("TEST: =============================\n");
+        printf("unitId: %d\n", unitId);
+        for(int j = 1; j < object.replicaBlockUnit[replicaId].size(); ++j){
+            printf("%d ", object.replicaBlockUnit[replicaId][j]);
+        }
+        printf("\n"); */
     }
-    // Test
-    printf("TEST: ==========================\n");
-    printf("blockId: %d\n", blockId);
+    assert(blockId != 0);
     return blockId;
 }
 
@@ -508,14 +511,16 @@ void read_action()
         // 令牌未到山穷水尽之地就要一直尝试消耗
         while(true){ 
             const int& objectId = diskUnits[diskPoint.position];
+            int unitId = diskPoint.position;
             // 需要 r、p 但令牌不够，这个磁盘磁头的动作结束
-            if(!need_read(i, diskPoint.position, objectId)){
+            if(!need_read(i, diskPoint.position, diskUnits[diskPoint.position])){
                 if(!do_pass(i)) break;
                 else continue;
             }
             if(!do_read(i)) break; 
             // 累积上报：读一个块，可以把 requests 队列中的 request 的所有相应位置置 true
-            int blockId = cal_block_id(objectId, i, diskPoint.position);
+            // int blockId = cal_block_id(objectId, i, diskPoint.position); // ！！注意，读之后磁头后移了，找了一下午 bug！！！
+            int blockId = cal_block_id(objectId, i, unitId);
             auto& requests = objects[objectId].requests;
             for (auto it = requests.begin(); it != requests.end(); ){
                 Request& request = *it;
