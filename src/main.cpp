@@ -1,7 +1,10 @@
 #include "global.h"
-#define GAP 100 // 更新 read 的起始 Tag（其区间的 startPoint）
+#define GAP 100 // 更新 read 的起始 Tag（其区间的 startPoint）。Todo：应该根据 preTag 的区间大小确定更新磁头位置的间隔时间
 
-// 初始化全局变量（vector 分配空间）
+// 下面是初始化操作
+// =============================================================================================
+
+/// @brief 初始化全局变量（vector 分配空间）
 void init_global_container(){
     tags.assign(M + 1, Tag());              // Tag 没有默认构造函数，使用默认参数
     for(int i = 1; i < tags.size(); ++i) {
@@ -16,7 +19,7 @@ void init_global_container(){
     tagIdRequestNum.assign(M + 1, 0);
 }
 
-// init tags
+/// @brief init tags
 void pre_input_process(){
     for (int k = 0; k < 3; ++k){
         for (int i = 1; i <= M; i++) {
@@ -31,7 +34,8 @@ void pre_input_process(){
     fflush(stdout);
 }
 
-void sort_tags(){ // 根据 read 总量进行排序，高的分区在前面。因为 write_to_random_partition 从后向前
+/// @brief 根据 read 总量进行排序，高的分区放在磁盘前面。因为 write_to_random_partition 从后向前
+void sort_tags(){ 
     // 根据阅读量排序
     std::sort(tags.begin() + 1, tags.end(), [](const Tag& a, const Tag& b) {
         int totalRead1 = 0, totalRead2 = 0;
@@ -53,7 +57,8 @@ void sort_tags(){ // 根据 read 总量进行排序，高的分区在前面。�
     }
 }
 
-void do_partition(){ // Do：计算 startUnit、endUnit
+/// @brief 计算每个分区的 startUnit、endUnit
+void do_partition(){
     // 计算每个标签占的空间、计算所有标签占的总容量
     vector<int> tagSpaces(tags.size());
     int totalSpace = 0;
@@ -64,7 +69,6 @@ void do_partition(){ // Do：计算 startUnit、endUnit
         }
         totalSpace += tagSpaces[i];
     }
-        
     // 根据每个标签的百分比，计算应该在磁盘上分配的容量，并计算得到每个标签的区间。NOTE: 10% 剩余（已取消）。
     vector<int> allocSpaces(tags.size());
     for (int i = 1; i < tags.size(); ++i){
@@ -73,20 +77,24 @@ void do_partition(){ // Do：计算 startUnit、endUnit
         tags[i].startUnit = tags[i - 1].endUnit;
         tags[i].endUnit = tags[i].startUnit + allocSpaces[i];
 
-        if(i == M && tags[i].endUnit > V) tags[i].endUnit = V + 1;  // 不用 *0.9 分空闲分区（用所有硬盘空间分区）的话，就要检查
+        // if(i == M && tags[i].endUnit > V) tags[i].endUnit = V + 1;  // 不用 *0.9 分空闲分区（用所有硬盘空间分区）的话，就要检查
+        if(i == M) tags[i].endUnit = V + 1;
     }
 }
 
-void timestamp_action() // 时间片对齐操作
-{
+/// @brief 时间片对齐操作
+void timestamp_action(){ 
     scanf("%*s%d", &TIMESTAMP);
     printf("TIMESTAMP %d\n", TIMESTAMP);
 
     fflush(stdout);
 }
 
-void delete_one_object(const int& objectId)
-{
+// 下面是删除操作
+// =============================================================================================
+
+/// @brief 磁盘上删除对象 
+void delete_one_object(const int& objectId){
     const Object& object = objects[objectId];
     for (int i = 1; i <= REP_NUM; ++i){
         for (int j = 1; j <= object.size; ++j){
@@ -99,8 +107,8 @@ void delete_one_object(const int& objectId)
     }
 }
 
-void delete_action()
-{
+/// @brief 删除操作
+void delete_action(){
     // 处理输入
     static vector<int> deleteObjects(MAX_OBJECT_NUM); // 10^6 * 4 = 4MB
     int nDelete;
@@ -138,7 +146,11 @@ void delete_action()
     fflush(stdout);
 }
 
-bool write_to_main_partition(int diskId, int objectId, int replicaId){
+// 下面是写操作
+// =============================================================================================
+
+/// @brief 对象尝试写入主分区
+bool write_to_main_partition(const int& diskId, const int& objectId, const int& replicaId){
     vector<int>& diskUnits = disks[diskId].diskUnits;
     Object& object = objects[objectId];
     int tagIndex = tagIdToTagsIndex[object.tagId];
@@ -167,7 +179,8 @@ bool write_to_main_partition(int diskId, int objectId, int replicaId){
     return true;
 }
 
-bool write_to_random_partition(int diskId, int objectId, int replicaId){
+/// @brief 主分区写不下，尝试从后向前插入磁盘空隙中
+bool write_to_random_partition(const int& diskId, const int& objectId, const int& replicaId){
     vector<int>& diskUnits = disks[diskId].diskUnits;
     Object& object = objects[objectId];
     int tagIndex = tagIdToTagsIndex[object.tagId];
@@ -196,7 +209,7 @@ bool write_to_random_partition(int diskId, int objectId, int replicaId){
     return true;
 }
 
-bool write_one_object(int objectId){
+bool write_one_object(const int& objectId){
     Object& object = objects[objectId];
     Tag& tag = tags[object.tagId];
     // 有 3 个副本
@@ -251,7 +264,6 @@ void write_action(){
     for (int i = 1; i <= nWrite; ++i){
         int objectId = writeObjects[i];
         const Object& object = objects[objectId];   // 引用是个很危险的使用，它可以提高效率，但也有更改原始数据的风险。所以最好加 const
-
         printf("%d\n", object.id);
         for (int i = 1; i <= REP_NUM; ++i){
             printf("%d", object.replicaDiskId[i]);
@@ -265,7 +277,11 @@ void write_action(){
     fflush(stdout);
 }
 
-void update_disk_point(){ // 每个时间片初始化所有磁头令牌为 G、还有命令
+// 下面是读操作
+// =============================================================================================
+
+/// @brief 每个时间片初始化所有磁头令牌为 G、还有命令
+void update_disk_point(){
     for(int i = 1; i < disks.size(); ++i){
         disks[i].diskPoint.remainToken = G;
         disks[i].diskPoint.cmd = "";
@@ -273,6 +289,7 @@ void update_disk_point(){ // 每个时间片初始化所有磁头令牌为 G、�
     assert(disks[1].diskPoint.remainToken == G);
 }
 
+/// @brief 磁头 pass
 bool do_pass(const int& diskId){
     Disk& disk = disks[diskId];
     DiskPoint& diskPoint = disk.diskPoint;
@@ -286,6 +303,7 @@ bool do_pass(const int& diskId){
     return true;
 }
 
+/// @brief 磁头 jump
 bool do_jump(const int& diskId, const int& unitId){
     Disk& disk = disks[diskId];
     DiskPoint& diskPoint = disk.diskPoint;
@@ -299,7 +317,8 @@ bool do_jump(const int& diskId, const int& unitId){
     return true;
 }
 
-bool do_read(int diskId){
+/// @brief 磁头 read
+bool do_read(const int& diskId){
     Disk& disk = disks[diskId];
     DiskPoint& diskPoint = disk.diskPoint;
     const auto& diskUnits = disk.diskUnits;
@@ -317,41 +336,48 @@ bool do_read(int diskId){
     return true;
 }
 
-void update_most_request_tag_and_disk_point(int _preTag = preTag){
-    // Important：是需要调参的，确保这个间隔可以遍历完一个区间
+/// @brief 每隔 【GAP】 根据 tag 的请求趋势图尝试更新（重置）所有磁头的起始 read 位置
+/// Important：GAP 是需要调参的，确保这个间隔可以遍历完一个区间。Todo：应该根据 preTag 的区间大小确定更新磁头位置的间隔时间
+void update_most_request_tag_and_disk_point(){
+    static int hotTag = 1;          
+    static int preTimestamp;        // 待使用
+    static int UPDATE_TIMESTAMP;    // 待使用
+
     if(TIMESTAMP < GAP){ 
         if(TIMESTAMP % 10 != 0) return;
     }else{ 
         if(TIMESTAMP % GAP != 0) return; 
     }
-    // 更新读取的 tag
-    int mostRequestTag = preTag;
+    // 更新 hotTag
+    int updateHotTag = hotTag;
     for (int i = 1; i < tagIdRequestNum.size(); ++i){
-        if(tagIdRequestNum[i] >= tagIdRequestNum[preTag]){
-            mostRequestTag = i;
+        if(tagIdRequestNum[i] >= tagIdRequestNum[hotTag]){
+            updateHotTag = i;
         }
     }
-    preTag = mostRequestTag;
-    // 移动磁头到该 tag 的区间
-    const int& tagsIndex = tagIdToTagsIndex[preTag];
+    hotTag = updateHotTag;
+    // 移动磁头到该 hotTag 的区间
+    const int& tagsIndex = tagIdToTagsIndex[hotTag];
     const Tag& tag = tags[tagsIndex];
     const int& startUnit = tag.startUnit;
     // 对于每一个磁头，计算消耗，判断是用 j or p
     for (int i = 1; i < disks.size(); ++i){
         Disk& disk = disks[i];
         DiskPoint& diskPoint = disk.diskPoint;
-        int distance = ((startUnit - diskPoint.position) + V) % V; // 计算 pass 的步数。磁头只能向后 pass，startUnit - position > or < 0
-        
-        if(distance >= diskPoint.remainToken){ // jump
+        int distance = ((startUnit - diskPoint.position) + V) % V; // 计算 pass 的步数。磁头只能向后 pass：startUnit - position > or < 0
+        // jump
+        if(distance >= diskPoint.remainToken){ 
             if(!do_jump(i, startUnit)) assert(false);
             continue;
         }
-        while(distance--){  // 非 jump 就 pass
+        // 非 jump 就 pass
+        while(distance--){  
             if(!do_pass(i)) assert(false);
         }
     }
 }
 
+/// @brief 读一个块时，需要判断其是第几个块，以便于把请求的 hasRead 相应位置置 true
 int cal_block_id(const int& objectId, const int& diskId, const int& unitId){
     const Object& object = objects[objectId];
     // 得到块的副本号
@@ -376,16 +402,18 @@ int cal_block_id(const int& objectId, const int& diskId, const int& unitId){
     return blockId;
 }
 
+/// @brief 判断一个块是否需要读？这里逻辑比较简单。TODO：应该遍历（自后向前） request 判断这个块是否需要读取（但是队列不可遍历...我改成了双端队列）
 bool need_read(const int& diskId, const int& unitId, const int& objectId){
     const Object& object = objects[objectId];
     const auto& requests = object.requests;
     if(!requests.empty()){
-        return true; // TODO: 应该遍历 request 判断这个块是否需要读取（但是队列不好遍历...我改成了双端队列）
+        return true;
     }else{
         return false;
     }
 }
 
+/// @brief 检查一个 request 的 hasRead 数组，判断 request 是否完成
 bool check_request_is_done(const Request& _request){
     for (int i = 1; i < _request.hasRead.size(); ++i){
         if(_request.hasRead[i] == false) return false;

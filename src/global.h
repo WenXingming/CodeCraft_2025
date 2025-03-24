@@ -153,5 +153,3 @@ vector<Object> objects;     // (4 + 4 + 4 + 4*3 + 3*5) * MAX_OBJECT_NUM = 3.9 * 
 vector<Disk> disks;         // MAX_DISK_NUM * (MAX_DISK_SIZE + 13B) ≈ 10 * 16384 = 1.6 * 10^5 ≈ 0.16 MB
 
 vector<int> tagIdRequestNum; // f(x): tagId 为 x 的请求数量
-int preTag = 1;
-// int preTimestamp; // 未使用
