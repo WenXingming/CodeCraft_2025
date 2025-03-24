@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <cassert>
 #include <cstdlib>
+#include <cmath>
 #include <iostream>
 #include <vector>
 #include <deque>
@@ -60,7 +61,7 @@ struct Object{
     vector<int> replicaDiskId;              // f(i) = 第 i 个副本的所在磁盘号
     vector<vector<int>> replicaBlockUnit;   // f(i,j) = 第 i 个副本、第 j 个块所在的磁盘（块）单元号
 
-    queue<Request> requests;                // 未完成的请求队列挂在对象上（用队列，是为了先来先处理）
+    deque<Request> requests;                // 未完成的请求队列挂在对象上（用队列，是为了先来先处理）
     queue<Request> timeoutRequests;         // 这里放超时的 request
 
     Object(){}
@@ -165,3 +166,4 @@ vector<Disk> disks;         // MAX_DISK_NUM * (MAX_DISK_SIZE + 13B) ≈ 10 * 163
 
 vector<int> tagIdRequestNum; // f(x): tagId 为 x 的请求数量
 int preTag = 1;
+// int preTimestamp;
