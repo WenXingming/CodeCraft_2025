@@ -401,7 +401,7 @@ bool do_read(int diskId){
 }
 
 void update_most_request_tag_and_disk_point(int _preTag = preTag){
-    if(TIMESTAMP % 3 != 0) return; // Important：10 是需要调参的，确保这个间隔可以遍历完一个区间
+    if(TIMESTAMP % 15 != 0) return; // Important：10 是需要调参的，确保这个间隔可以遍历完一个区间
     // 更新读取的 tag
     int mostRequestTag = preTag;
     for (int i = 1; i < tagIdRequestNum.size(); ++i){
