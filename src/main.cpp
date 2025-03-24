@@ -1,4 +1,5 @@
 #include "global.h"
+#define GAP 100 // 更新 read 的起始 Tag（其区间的 startPoint）
 
 // 初始化全局变量（vector 分配空间）
 void init_global_container(){
@@ -206,39 +207,6 @@ bool write_to_main_partition(int diskId, int objectId, int replicaId){
     return true;
 }
 
-/* bool write_to_free_partition(int diskId, int objectId, int replicaId){
-    vector<int>& diskUnits = disks[diskId].diskUnits;
-    Object& object = objects[objectId];
-    int tagIndex = tagIdToTagsIndex[object.tagId];
-    const Tag& tag = tags[tagIndex];
-
-    // 副本不能写入重复磁盘
-    for (int i = 1; i <= REP_NUM; ++i){
-        if(object.replicaDiskId[i] == diskId) return false;
-    }
-
-    // 判断空余分区剩余空间
-    int restSpace = 0;
-    for (int i = tags[tags.size() - 1].endUnit; i < V + 1; ++i){
-        if(diskUnits[i] == 0) restSpace ++;
-        if(restSpace == object.size) break;
-    }
-    if(restSpace != object.size) return false;
-
-    // 写入磁盘
-    for(int i = tags[tags.size() - 1].endUnit, cnt = 0; i < V + 1 && cnt < object.size; ++i){
-        if(diskUnits[i] == 0) {
-            diskUnits[i] = objectId;
-            cnt++;
-
-            // 写入时注意要维护 object 信息
-            object.replicaDiskId[replicaId] = diskId;
-            object.replicaBlockUnit[replicaId][cnt] = i;
-        }
-    }
-    return true;
-} */
-
 bool write_to_random_partition(int diskId, int objectId, int replicaId){
     vector<int>& diskUnits = disks[diskId].diskUnits;
     Object& object = objects[objectId];
@@ -284,17 +252,6 @@ bool write_one_object(int objectId){
             }
         }
         if(isWriteSucess) continue;
-
-        /* // 遍历所有磁盘，尝试写入空余分区
-        for (int i = 1; i <= N; ++i) {
-            int writeDiskId = tag.update_free_disk_id();
-            if (write_to_free_partition(writeDiskId, objectId, k)) {
-                isWriteSucess = true;
-                break;
-            }
-        }
-        if(isWriteSucess) continue; */
-
         // 无奈，只能随机找位置写入
         for (int i = 1; i <= N; ++i){
             int writeDiskId = tag.update_random_disk_id();
@@ -401,7 +358,12 @@ bool do_read(int diskId){
 }
 
 void update_most_request_tag_and_disk_point(int _preTag = preTag){
-    if(TIMESTAMP % 15 != 0) return; // Important：10 是需要调参的，确保这个间隔可以遍历完一个区间
+    // Important：是需要调参的，确保这个间隔可以遍历完一个区间
+    if(TIMESTAMP < GAP){ 
+        if(TIMESTAMP % 10 != 0) return;
+    }else{ 
+        if(TIMESTAMP % GAP != 0) return; 
+    }
     // 更新读取的 tag
     int mostRequestTag = preTag;
     for (int i = 1; i < tagIdRequestNum.size(); ++i){
@@ -558,9 +520,6 @@ void read_action()
 
     fflush(stdout);
 }
-
-
-
 
 int main()
 {

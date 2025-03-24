@@ -42,7 +42,7 @@ struct Request{
     int id;                 // 请求 id
     int objectId;           // 请求的对象 id
 
-    int arriveTime;         // 请求到达的时刻
+    int arriveTime;         // 请求到达的时刻，暂未使用
     vector<bool> hasRead;   // f(i)：对象的第 i 个块是否读取
 
     Request(){}
@@ -79,7 +79,6 @@ struct Tag{
     int id;
     // 管理标签写入磁盘
     int writeMainDiskId;    // 拥有此 id 标签的对象写入主分区时的磁盘号
-    // int writeFreeDiskId;    // 拥有此 id 标签的对象写入空余分区时的磁盘号
     int writeRandomDiskId;
     // NOTE: [)
     int startUnit;          // 此 id 标签的对象在磁盘分区（主分区）上的起始位置
@@ -89,10 +88,9 @@ struct Tag{
     vector<int> freWrite;
     vector<int> freRead;
     // 非必要不提供默认构造函数。可以使用【默认参数】
-    Tag(/* int& _id,  */int _writeMainDiskId = 1, /* int _writeFreeDiskId = 1, */ int _writeRandomDiskId = 1, int _startUnit = 1, int _endUnit = 1) {
+    Tag(/* int& _id,  */int _writeMainDiskId = 1, int _writeRandomDiskId = 1, int _startUnit = 1, int _endUnit = 1) {
         /* this->id = _id; */
         this->writeMainDiskId = _writeMainDiskId;
-        // this->writeFreeDiskId = _writeFreeDiskId;
         this->writeRandomDiskId = _writeRandomDiskId;
         this->startUnit = _startUnit;
         this->endUnit = _endUnit;
@@ -108,14 +106,6 @@ struct Tag{
         writeMainDiskId = writeMainDiskId % N + 1;
         return tmp;
     }
-
-    /* // 得到当前写入的空余分区所在磁盘
-    int update_free_disk_id(){
-        int tmp = writeFreeDiskId;
-        writeFreeDiskId = writeFreeDiskId % N + 1;
-        return tmp;
-    } */
-
     // 随机写入的磁盘进行轮转
     int update_random_disk_id(){
         int tmp = writeRandomDiskId;
@@ -127,9 +117,8 @@ struct Tag{
 struct DiskPoint{
     int position;       // 磁头位置
     int remainToken;    // 剩余 Token：因为移动需要消耗 Token
-    // 便于计算本次 Token
-    char preAction;     // 上一个动作
-    int preCostToken;   // 上一个消耗的 Token
+    char preAction;     // 上一个动作、上一个消耗的 Token：便于计算本次 Token
+    int preCostToken;   
 
     string cmd;         // 每个磁头的命令
 
@@ -165,4 +154,4 @@ vector<Disk> disks;         // MAX_DISK_NUM * (MAX_DISK_SIZE + 13B) ≈ 10 * 163
 
 vector<int> tagIdRequestNum; // f(x): tagId 为 x 的请求数量
 int preTag = 1;
-// int preTimestamp;
+// int preTimestamp; // 未使用
