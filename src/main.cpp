@@ -1,5 +1,5 @@
 #include "global.h"
-#define GAP 130 // 更新 read 的起始 Tag（其区间的 startPoint）。Todo：应该根据 preTag 的区间大小确定更新磁头位置的间隔时间
+#define GAP 129 // 更新 read 的起始 Tag（其区间的 startPoint）。Todo：应该根据 preTag 的区间大小确定更新磁头位置的间隔时间
 
 // 下面是初始化操作
 // =============================================================================================
@@ -337,9 +337,9 @@ bool do_read(const int& diskId){
 
 /// @brief 每隔 【GAP】 根据 tag 的请求趋势图尝试更新（重置）所有磁头的起始 read 位置
 /// TODO: GAP 是需要调参的，确保这个间隔可以遍历完一个区间
-/// TODO: 设置 3 个或多个 hotTag（此时设置了 【N】 个）；并移动磁头到相应位置
+/// TODO: 设置 3 个或多个 hotTag（此时设置了 N 个）；并移动磁头到相应位置
 void update_hot_tags_and_disk_point_position(){  
-    if (TIMESTAMP % GAP != 0 || TIMESTAMP == 1) return; // TIMESTAMP == 1 也更新一下
+    if (TIMESTAMP % GAP != 0) return; // TIMESTAMP == 1 也更新一下
 
     static vector<pair<int, int>> hotTags(M + 1);   // pair<int, int>: {tagId, requestNum}
     // 更新 hotTags
