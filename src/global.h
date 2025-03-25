@@ -43,7 +43,7 @@ struct Request{
     int objectId;           // 请求的对象 id
 
     int arriveTime;         // 请求到达的时刻，暂未使用
-    vector<bool> hasRead;   // f(i)：对象的第 i 个块是否读取
+    vector<bool> hasRead;   // f(i)：对象的第 i 个块是否读取，i ∈ [1, object.size]
 
     Request(){}
     Request(int _id, int _objectId, int _arriveTime, int _objectSize){ // 默认参数只能自右往左写
@@ -62,7 +62,7 @@ struct Object{
     vector<vector<int>> replicaBlockUnit;   // f(i,j) = 第 i 个副本、第 j 个块所在的磁盘（块）单元号
 
     deque<Request> requests;                // 未完成的请求队列挂在对象上（用队列，是为了先来先处理）
-    queue<Request> timeoutRequests;         // 这里放超时的 request
+    queue<Request> timeoutRequests;         // 这里放超时的 request，暂未使用
 
     Object(){}
     Object(int _id, int _size, int _tagId){
@@ -78,18 +78,18 @@ struct Object{
 struct Tag{
     int id;
     // 管理标签写入磁盘
-    int writeMainDiskId;    // 拥有此 id 标签的对象写入主分区时的磁盘号
+    int writeMainDiskId;    // 拥有此 id 标签的对象写入主分区时的磁盘号, [1, N]
     int writeRandomDiskId;
     // NOTE: [)
-    int startUnit;          // 此 id 标签的对象在磁盘分区（主分区）上的起始位置
+    int startUnit;          // 此 id 标签的对象在磁盘分区（主分区）上的起始位置, [1, V]
     int endUnit;            // 此 id 标签的对象在磁盘分区（主分区）上的终止位置
 
     vector<int> freDel;     // NOTE: 下标从 1 开始
     vector<int> freWrite;
     vector<int> freRead;
     // 非必要不提供默认构造函数。可以使用【默认参数】
-    Tag(/* int& _id,  */int _writeMainDiskId = 1, int _writeRandomDiskId = 1, int _startUnit = 1, int _endUnit = 1) {
-        /* this->id = _id; */
+    Tag(int _writeMainDiskId = 1, int _writeRandomDiskId = 1, int _startUnit = 1, int _endUnit = 1) {
+        // id 待留运行时初始化
         this->writeMainDiskId = _writeMainDiskId;
         this->writeRandomDiskId = _writeRandomDiskId;
         this->startUnit = _startUnit;

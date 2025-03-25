@@ -76,7 +76,6 @@ void do_partition(){
         allocSpaces[i] = V * (static_cast<double>(tagSpaces[i]) / totalSpace);
         tags[i].startUnit = tags[i - 1].endUnit;
         tags[i].endUnit = tags[i].startUnit + allocSpaces[i];
-
         // if(i == M && tags[i].endUnit > V) tags[i].endUnit = V + 1;  // 不用 *0.9 分空闲分区（用所有硬盘空间分区）的话，就要检查
         if(i == M) tags[i].endUnit = V + 1;
     }
@@ -99,9 +98,9 @@ void delete_one_object(const int& objectId){
     for (int i = 1; i <= REP_NUM; ++i){
         for (int j = 1; j <= object.size; ++j){
             int diskId = object.replicaDiskId[i];
-            int unitId = object.replicaBlockUnit[i][j];
-
             Disk& disk = disks[diskId];
+            int unitId = object.replicaBlockUnit[i][j];
+            
             disk.diskUnits[unitId] = 0;
         }
     }
@@ -183,7 +182,7 @@ bool write_to_main_partition(const int& diskId, const int& objectId, const int& 
 bool write_to_random_partition(const int& diskId, const int& objectId, const int& replicaId){
     vector<int>& diskUnits = disks[diskId].diskUnits;
     Object& object = objects[objectId];
-    int tagIndex = tagIdToTagsIndex[object.tagId];
+    const int& tagIndex = tagIdToTagsIndex[object.tagId];
     const Tag& tag = tags[tagIndex];
     // 副本不能写入重复磁盘
     for (int i = 1; i <= REP_NUM; ++i){
@@ -338,7 +337,7 @@ bool do_read(const int& diskId){
 
 /// @brief 每隔 【GAP】 根据 tag 的请求趋势图尝试更新（重置）所有磁头的起始 read 位置
 /// Important：GAP 是需要调参的，确保这个间隔可以遍历完一个区间。Todo：应该根据 preTag 的区间大小确定更新磁头位置的间隔时间
-void update_most_request_tag_and_disk_point(){
+void update_most_request_tag_and_disk_point(){  // TODO: 设置 3 个或多个 hotTag（甚至 N 个），并移动磁头到相应位置
     static int hotTag = 1;          
     static int preTimestamp;        // 待使用
     static int UPDATE_TIMESTAMP;    // 待使用
@@ -379,7 +378,7 @@ void update_most_request_tag_and_disk_point(){
 
 /// @brief 读一个块时，需要判断其是第几个块，以便于把请求的 hasRead 相应位置置 true
 int cal_block_id(const int& diskId, const int& unitId, const int& objectId){
-    assert(objectId != 0);  // 确保 object 不为 0，以防万一
+    assert(objectId != 0);  // 确保 object 不为 0，以防万一。主要是这个特况需要函数外部确认
     const Object& object = objects[objectId];
     // 得到块的副本号
     int replicaId = 0;
@@ -399,11 +398,11 @@ int cal_block_id(const int& diskId, const int& unitId, const int& objectId){
             break;
         }
     }
-    assert(blockId != 0);
+    assert(blockId != 0); // 确保传入的 diskId、unitId、objectId 对的上，在 object 中有记录
     return blockId;
 }
 
-/// @brief 判断一个块是否需要读？这里逻辑比较简单。TODO：应该遍历（自后向前） request 判断这个块是否需要读取（但是队列不可遍历...我改成了双端队列）
+/// @brief 判断一个块是否需要读？这里逻辑比较简单。应该遍历（自后向前） requests 判断这个块是否需要读取（但是队列不可遍历...我改成了双端队列）；其实无需遍历，只需访问最后一个 request 即可得出答案（注意为了防止 segment fault，需要特判 requests.empty()）
 bool need_read(const int& diskId, const int& unitId, const int& objectId){
     if(objectId == 0) return false; // bug，特况，先要判断 objectId ！= 0
 
@@ -452,7 +451,6 @@ void read_action()
     // 开始读取
     update_disk_point();
     update_most_request_tag_and_disk_point();
-
     vector<int> finishRequests;
     for(int i = 1; i < disks.size(); ++i){ // 每个磁头，串行开始读取
         const auto& diskUnits = disks[i].diskUnits;
@@ -461,11 +459,6 @@ void read_action()
         while(true){ 
             const int unitId = diskPoint.position;      // unitId 不可用引用，因为后面 cal_block_id 时磁头移动了
             const int& objectId = diskUnits[unitId];    // 注意： objectId 可能为 0。不知道为什么没判断居然没报错？
-            // if(objectId == 0){
-            //     if(!do_pass(i)) break;
-            //     else continue;
-            // }
-            // assert(objectId != 0);
             // 需要 r、p 但令牌不够，这个磁盘磁头的动作结束
             if(!need_read(i, unitId, objectId) || objectId == 0){
                 if(!do_pass(i)) break;
