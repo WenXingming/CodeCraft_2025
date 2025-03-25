@@ -475,13 +475,14 @@ void read_action()
             // }
             // assert(objectId != 0);
             // 需要 r、p 但令牌不够，这个磁盘磁头的动作结束
-            if(!need_read(i, unitId, objectId)){
+            if(!need_read(i, unitId, objectId) || objectId == 0){
                 if(!do_pass(i)) break;
                 else continue;
             }
             if(!do_read(i)) break; 
             // 累积上报：每读一个块，就把 requests 队列中的 request 的所有相应位置置 true
             // int blockId = cal_block_id(objectId, i, diskPoint.position); // ！！注意，读之后磁头后移了，找了一下午 bug！！！
+            assert(objectId != 0);
             int blockId = cal_block_id(i, unitId, objectId);
             auto& requests = objects[objectId].requests;
             for (auto it = requests.begin(); it != requests.end(); ){
