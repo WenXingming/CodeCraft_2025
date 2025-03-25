@@ -1,5 +1,5 @@
 #include "global.h"
-#define GAP 100 // 更新 read 的起始 Tag（其区间的 startPoint）。Todo：应该根据 preTag 的区间大小确定更新磁头位置的间隔时间
+#define GAP 130 // 更新 read 的起始 Tag（其区间的 startPoint）。Todo：应该根据 preTag 的区间大小确定更新磁头位置的间隔时间
 
 // 下面是初始化操作
 // =============================================================================================
@@ -336,31 +336,27 @@ bool do_read(const int& diskId){
 }
 
 /// @brief 每隔 【GAP】 根据 tag 的请求趋势图尝试更新（重置）所有磁头的起始 read 位置
-/// Important：GAP 是需要调参的，确保这个间隔可以遍历完一个区间。Todo：应该根据 preTag 的区间大小确定更新磁头位置的间隔时间
-void update_most_request_tag_and_disk_point(){  // TODO: 设置 3 个或多个 hotTag（甚至 N 个），并移动磁头到相应位置
-    static int hotTag = 1;          
-    static int preTimestamp;        // 待使用
-    static int UPDATE_TIMESTAMP;    // 待使用
+/// TODO: GAP 是需要调参的，确保这个间隔可以遍历完一个区间
+/// TODO: 设置 3 个或多个 hotTag（此时设置了 【N】 个）；并移动磁头到相应位置
+void update_hot_tags_and_disk_point_position(){  
+    if (TIMESTAMP % GAP != 0 || TIMESTAMP == 1) return; // TIMESTAMP == 1 也更新一下
 
-    if(TIMESTAMP < GAP){ 
-        if(TIMESTAMP % 10 != 0) return;
-    }else{ 
-        if(TIMESTAMP % GAP != 0) return; 
+    static vector<pair<int, int>> hotTags(M + 1);   // pair<int, int>: {tagId, requestNum}
+    // 更新 hotTags
+    for (int i = 1; i < hotTags.size(); ++i){
+        hotTags[i] = { i, tagIdRequestNum[i] };
     }
-    // 更新 hotTag
-    int updateHotTag = hotTag;
-    for (int i = 1; i < tagIdRequestNum.size(); ++i){
-        if(tagIdRequestNum[i] >= tagIdRequestNum[hotTag]){
-            updateHotTag = i;
-        }
-    }
-    hotTag = updateHotTag;
-    // 移动磁头到该 hotTag 的区间
-    const int& tagsIndex = tagIdToTagsIndex[hotTag];
-    const Tag& tag = tags[tagsIndex];
-    const int& startUnit = tag.startUnit;
-    // 对于每一个磁头，计算消耗，判断是用 j or p
+    std::sort(hotTags.begin(), hotTags.end(), [](const pair<int, int>& x, const pair<int, int>& y) {
+        return x.second > y.second;
+    });
+
+    // 每一个磁头移动到相应 hotTag 的区间起始位置
     for (int i = 1; i < disks.size(); ++i){
+        const int& tagId = hotTags[i].first;
+        const int& tagsIndex = tagIdToTagsIndex[tagId];
+        const Tag& tag = tags[tagsIndex];
+        const int& startUnit = tag.startUnit;
+        // 对于每一个磁头，计算消耗，判断是用 j or p
         Disk& disk = disks[i];
         DiskPoint& diskPoint = disk.diskPoint;
         int distance = ((startUnit - diskPoint.position) + V) % V; // 计算 pass 的步数。磁头只能向后 pass：startUnit - position > or < 0
@@ -450,7 +446,7 @@ void read_action()
 
     // 开始读取
     update_disk_point();
-    update_most_request_tag_and_disk_point();
+    update_hot_tags_and_disk_point_position();
     vector<int> finishRequests;
     for(int i = 1; i < disks.size(); ++i){ // 每个磁头，串行开始读取
         const auto& diskUnits = disks[i].diskUnits;
