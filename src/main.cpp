@@ -12,7 +12,6 @@ void init_global_container(){
     }
     tagIdToTagsIndex.assign(M + 1, 0); // 运行时 M 有值，分配内存就要写在运行时。写在全局区没用会有 bug！
 
-
     objects.resize(MAX_OBJECT_NUM + 1);     // 待留写入时初始化每个 object 对象
     disks.assign(N + 1, Disk());
 
@@ -77,7 +76,7 @@ void do_partition(){
         tags[i].startUnit = tags[i - 1].endUnit;
         tags[i].endUnit = tags[i].startUnit + allocSpaces[i];
         // if(i == M && tags[i].endUnit > V) tags[i].endUnit = V + 1;  // 不用 *0.9 分空闲分区（用所有硬盘空间分区）的话，就要检查
-        if(i == M) tags[i].endUnit = V + 1;
+        if(i == M) tags[i].endUnit = V + 1; // 避免浮点数导致分区越界；同时也避免少量空间未被利用
     }
 }
 
@@ -127,7 +126,7 @@ void delete_action(){
         int objcetId = deleteObjects[i];
         Object& object = objects[objcetId];
 
-        abortNum += object.requests.size();
+        abortNum += object.requests.size() + object.timeoutRequests.size();
     }
     printf("%d\n", abortNum);
     // 打印撤销请求 id（并维护请求数据结构）
@@ -135,10 +134,24 @@ void delete_action(){
         int objcetId = deleteObjects[i];
         Object& object = objects[objcetId];     // 无法加 const，后面修改 requests
         deque<Request>& requests = object.requests;
-        while (!requests.empty()) {
-            Request& request = requests.front();
-            requests.pop_front();
-            printf("%d\n", request.id);
+
+        // while(!requests.empty()){
+        //     Request& request = requests.front();
+        //     requests.pop_front();
+        //     printf("%d\n", request.id);
+        // }
+
+        queue<Request>& timeoutRequests = object.timeoutRequests;
+        while (!requests.empty() || !timeoutRequests.empty()) {
+            if(!requests.empty()){
+                Request& request = requests.front();
+                requests.pop_front();
+                printf("%d\n", request.id);
+            }else if(!timeoutRequests.empty()){
+                Request& request = timeoutRequests.front();
+                timeoutRequests.pop();
+                printf("%d\n", request.id);
+            }
         }
     }
 
@@ -149,6 +162,7 @@ void delete_action(){
 // =============================================================================================
 
 /// @brief 对象尝试写入主分区
+/// TODO: 先尝试找连续的块写，不行再零碎写入。利用双指针找大块空间
 bool write_to_main_partition(const int& diskId, const int& objectId, const int& replicaId){
     vector<int>& diskUnits = disks[diskId].diskUnits;
     Object& object = objects[objectId];
@@ -166,7 +180,29 @@ bool write_to_main_partition(const int& diskId, const int& objectId, const int& 
     }
     if(restSpace != object.size) return false;
     // 写入磁盘
-    for (int i = tag.startUnit, cnt = 0; i < tag.endUnit && cnt < object.size; ++i){
+    // 1.1 尝试找连续空间：要找能放下对象的最小连续块（即 >= object.size 但又最小的连续块）
+    int index = tag.startUnit, size = INT_MAX; // 记录当前连续块的起始位置及大小
+    for(int i = tag.startUnit; i + object.size <= tag.endUnit; ++i){
+        if(diskUnits[i] != 0) continue;
+
+        int j = i;
+        while (j < tag.endUnit && diskUnits[j] == 0) {
+            j++;
+        }
+        if(j-i == object.size){ index = i; break;} // 找到了大小最合适的连续块
+        else if(j-i < object.size){ i = j; continue;}
+        else{
+            if(j-i >= size) {i = j; continue;}
+            else{
+                index = i;
+                size = j - i;
+
+                i = j;
+            }
+        }
+    }
+    // 1.2 没有大块空间，零碎写入
+    for (int i = index, cnt = 0; i < tag.endUnit && cnt < object.size; ++i){
         if(diskUnits[i] == 0) {
             diskUnits[i] = objectId;
             cnt++;
@@ -217,7 +253,6 @@ bool write_one_object(const int& objectId){
         bool isWriteSucess = false;
         for (int i = 1; i <= N; ++i) {
             int writeDiskId = tag.update_main_disk_id();
-            // TEST
             if (write_to_main_partition(writeDiskId, objectId, k)) {
                 isWriteSucess = true;
                 break;
@@ -337,8 +372,8 @@ bool do_read(const int& diskId){
 
 /// @brief 每隔 【GAP】 根据 tag 的请求趋势图尝试更新（重置）所有磁头的起始 read 位置
 /// TODO: GAP 是需要调参的，确保这个间隔可以遍历完一个区间
-/// TODO: 设置 3 个或多个 hotTag（此时设置了 N 个）；并移动磁头到相应位置
-void update_hot_tags_and_disk_point_position(){  
+/// DONE: 设置 3 个或多个 hotTag；并移动磁头到相应位置。经测试，设置 N 个得分最高！
+void update_hot_tags_and_disk_point_position(){ 
     if (TIMESTAMP % GAP != 0) return; // TIMESTAMP == 1 也更新一下
 
     static vector<pair<int, int>> hotTags(M + 1);   // pair<int, int>: {tagId, requestNum}
@@ -352,6 +387,7 @@ void update_hot_tags_and_disk_point_position(){
 
     // 每一个磁头移动到相应 hotTag 的区间起始位置
     for (int i = 1; i < disks.size(); ++i){
+        // const int& tagId = hotTags[(i+1)/2].first;   // (i+2)/3
         const int& tagId = hotTags[i].first;
         const int& tagsIndex = tagIdToTagsIndex[tagId];
         const Tag& tag = tags[tagsIndex];
@@ -423,8 +459,9 @@ bool check_request_is_done(const Request& _request){
     return true;
 }
 
-void read_action()
-{
+/// TODO: 是否可以预读取？
+/// TODO: 维护超时队列，从而增加 need_read 的可靠性
+void read_action(){
     // 处理输入
     int nRead;
     int requestId, objectId;
@@ -443,7 +480,6 @@ void read_action()
         const int& tagId = objects[objectId].tagId;
         tagIdRequestNum[tagId]++;
     }
-
     // 开始读取
     update_disk_point();
     update_hot_tags_and_disk_point_position();
@@ -455,21 +491,34 @@ void read_action()
         while(true){ 
             const int unitId = diskPoint.position;      // unitId 不可用引用，因为后面 cal_block_id 时磁头移动了
             const int& objectId = diskUnits[unitId];    // 注意： objectId 可能为 0。不知道为什么没判断居然没报错？
-            // 需要 r、p 但令牌不够，这个磁盘磁头的动作结束
+            // 需要 r、p 但令牌不够，这个磁盘磁头的动作结束         
             if(!need_read(i, unitId, objectId) || objectId == 0){
                 if(!do_pass(i)) break;
                 else continue;
-            }
+            }         
             if(!do_read(i)) break; 
             // 累积上报：每读一个块，就把 requests 队列中的 request 的所有相应位置置 true
             // int blockId = cal_block_id(objectId, i, diskPoint.position); // ！！注意，读之后磁头后移了，找了一下午 bug！！！
             assert(objectId != 0);
             int blockId = cal_block_id(i, unitId, objectId);
             auto& requests = objects[objectId].requests;
-            for (auto it = requests.begin(); it != requests.end(); ){
+
+            bool preCheck = true;
+            for (auto it = requests.begin(); it != requests.end(); ){                
                 Request& request = *it;
                 request.hasRead[blockId] = true;
-                if(check_request_is_done(request)){ // TODO：如果某一次检查没过，其实就不必检查了
+                // 每次读取块时检查,超时的请求直接扔了丢入超时队列，也无需上报了（可以减轻 requests 队列，帮助 need_read 判断）
+                if(TIMESTAMP - request.arriveTime > EXTRA_TIME){
+                    it++;
+                    requests.pop_front();
+                    objects[objectId].timeoutRequests.push(request);
+                    // 更新请求趋势图
+                    const int& tagId = objects[objectId].tagId;
+                    tagIdRequestNum[tagId]--;
+                    continue;
+                }
+
+                if(preCheck && check_request_is_done(request)){ // 如果某一次检查没过，其实就不必检查了，使用 preCheck 记录
                     finishRequests.push_back(request.id);
                     it++; // 防在 pop_front() 前面，以防不测...或者使用 erase()
                     requests.pop_front();
@@ -478,6 +527,7 @@ void read_action()
                     const int& tagId = objects[objectId].tagId;
                     tagIdRequestNum[tagId]--;
                 }else{
+                    preCheck = false;
                     it++;
                 }
             }
@@ -505,8 +555,8 @@ void read_action()
 int main()
 {
     scanf("%d%d%d%d%d", &T, &M, &N, &V, &G);
-    init_global_container();
 
+    init_global_container();
     pre_input_process();
     sort_tags();
     do_partition();
