@@ -378,7 +378,8 @@ void update_most_request_tag_and_disk_point(){
 }
 
 /// @brief 读一个块时，需要判断其是第几个块，以便于把请求的 hasRead 相应位置置 true
-int cal_block_id(const int& objectId, const int& diskId, const int& unitId){
+int cal_block_id(const int& diskId, const int& unitId, const int& objectId){
+    assert(objectId != 0);  // 确保 object 不为 0，以防万一
     const Object& object = objects[objectId];
     // 得到块的副本号
     int replicaId = 0;
@@ -404,14 +405,28 @@ int cal_block_id(const int& objectId, const int& diskId, const int& unitId){
 
 /// @brief 判断一个块是否需要读？这里逻辑比较简单。TODO：应该遍历（自后向前） request 判断这个块是否需要读取（但是队列不可遍历...我改成了双端队列）
 bool need_read(const int& diskId, const int& unitId, const int& objectId){
+    if(objectId == 0) return false; // bug，特况，先要判断 objectId ！= 0
+
     const Object& object = objects[objectId];
-    const auto& requests = object.requests;
-    if(!requests.empty()){
-        return true;
-    }else{
-        return false;
+    const deque<Request>& requests = object.requests;
+    for (auto it = requests.crbegin(); it != requests.crend(); it++){   // 我用成 [crend(), crbegin())了...用反了
+        const Request& request = *it;
+        const auto& hasRead = request.hasRead;
+        int blockId = cal_block_id(diskId, unitId, objectId);
+
+        if (hasRead[blockId] == false) return true; // for 内部只执行一次
+        else return false;
     }
-}
+    return false;
+    // if(requests.empty()) return false; // 特况判断，否则后续迭代器访问 segment fault。用 for 就不会出现这种情况
+    // auto it = requests.crbegin();
+    // // if(it == requests.crend()) return false;
+    // const Request& request = *it;
+    // const auto& hasRead = request.hasRead;
+    // int blockId = cal_block_id(diskId, unitId, objectId);
+    // if (hasRead[blockId] == false) return true;
+    // else return false;
+}   
 
 /// @brief 检查一个 request 的 hasRead 数组，判断 request 是否完成
 bool check_request_is_done(const Request& _request){
@@ -452,17 +467,22 @@ void read_action()
         DiskPoint& diskPoint = disks[i].diskPoint;
         // 令牌未到山穷水尽之地就要一直尝试消耗
         while(true){ 
-            const int& objectId = diskUnits[diskPoint.position];
-            int unitId = diskPoint.position;
+            const int unitId = diskPoint.position;      // unitId 不可用引用，因为后面 cal_block_id 时磁头移动了
+            const int& objectId = diskUnits[unitId];    // 注意： objectId 可能为 0。不知道为什么没判断居然没报错？
+            // if(objectId == 0){
+            //     if(!do_pass(i)) break;
+            //     else continue;
+            // }
+            // assert(objectId != 0);
             // 需要 r、p 但令牌不够，这个磁盘磁头的动作结束
-            if(!need_read(i, diskPoint.position, diskUnits[diskPoint.position])){
+            if(!need_read(i, unitId, objectId)){
                 if(!do_pass(i)) break;
                 else continue;
             }
             if(!do_read(i)) break; 
-            // 累积上报：读一个块，可以把 requests 队列中的 request 的所有相应位置置 true
+            // 累积上报：每读一个块，就把 requests 队列中的 request 的所有相应位置置 true
             // int blockId = cal_block_id(objectId, i, diskPoint.position); // ！！注意，读之后磁头后移了，找了一下午 bug！！！
-            int blockId = cal_block_id(objectId, i, unitId);
+            int blockId = cal_block_id(i, unitId, objectId);
             auto& requests = objects[objectId].requests;
             for (auto it = requests.begin(); it != requests.end(); ){
                 Request& request = *it;
@@ -481,7 +501,6 @@ void read_action()
             }
         }
     }
-
     // 输出 cmd、上报完成的请求
     for (int i = 1; i < disks.size(); ++i){
         const Disk& disk = disks[i];
