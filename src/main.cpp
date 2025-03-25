@@ -418,14 +418,6 @@ bool need_read(const int& diskId, const int& unitId, const int& objectId){
         else return false;
     }
     return false;
-    // if(requests.empty()) return false; // 特况判断，否则后续迭代器访问 segment fault。用 for 就不会出现这种情况
-    // auto it = requests.crbegin();
-    // // if(it == requests.crend()) return false;
-    // const Request& request = *it;
-    // const auto& hasRead = request.hasRead;
-    // int blockId = cal_block_id(diskId, unitId, objectId);
-    // if (hasRead[blockId] == false) return true;
-    // else return false;
 }   
 
 /// @brief 检查一个 request 的 hasRead 数组，判断 request 是否完成
