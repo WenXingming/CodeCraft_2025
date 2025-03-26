@@ -1,5 +1,6 @@
 #include "global.h"
 #define GAP 129 // 更新 read 的起始 Tag（其区间的 startPoint）。Todo：应该根据 preTag 的区间大小确定更新磁头位置的间隔时间
+#define CONTINUE_READ_BLOCK_NUM 8   // 保证连续阅读的调参
 
 // 下面是初始化操作
 // =============================================================================================
@@ -454,39 +455,39 @@ int cal_block_id(const int& diskId, const int& unitId, const int& objectId){
 }
 
 /// @brief 简单判断一个块是否需要读？这里逻辑比较简单：依据请求队列中是否需要这个块。
-bool need_read(const int& diskId, const int& unitId, const int& objectId){
-    if(objectId == 0) return false; // bug，特况，先要判断 objectId ！= 0
+bool request_need_this_block(const int& diskId, const int& unitId, const int& objectId){
+    if(objectId == 0) return false; // bug，特况，先要判断 objectId ！= 0，否则 cal_block_id 会有问题
 
     const Object& object = objects[objectId];
     const deque<Request>& requests = object.requests;
     for (auto it = requests.crbegin(); it != requests.crend(); it++){   // 我用成 [crend(), crbegin())了...用反了
         const Request& request = *it;
         const auto& hasRead = request.hasRead;
-        int blockId = cal_block_id(diskId, unitId, objectId); // 确保传入的 objectId != 0
+        int blockId = cal_block_id(diskId, unitId, objectId);
 
-        if (hasRead[blockId] == false) return true; // for 内部只执行一次。只需访问最后一个 request 即可得出答案，队列不可遍历...或随机访问我改成了双端队列
+        if (hasRead[blockId] == false) return true; // for 内部只执行一次，因为只需访问最后一个 request 即可得出答案。队列不可遍历或随机访问我改成了双端队列
         else return false;
     }
     return false;
 }   
 
 /// @brief 某一个块可能并不需要，但是为了保持连续阅读，有时也需要 read
-/// TODO: 调参，中间断多少个块需要连续读（最好是能够计算出来，从而做出最优决策。然而感觉难以计算最优，只能估计，可以在某一个区间内估计）
+/// TODO: 调参！！！中间断多少个块需要连续读（最好是能够计算出来，从而做出最优决策。然而感觉难以计算最优，只能估计，可以在某一个区间内估计）
 bool continue_read(const int& _diskId, const int& _unitId, const int& _objectId){
-    if(need_read(_diskId, _unitId, _objectId)) return true;
-    
+    if(request_need_this_block(_diskId, _unitId, _objectId)) return true;
+
     const Disk& disk = disks[_diskId];
     const DiskPoint& diskPoint = disk.diskPoint;
 
     if(diskPoint.preAction != 'r') return false;
-    const int& preCost = diskPoint.preCostToken;
-    // 经过计算，只需判断后3步（极限假设 preCost = 16，pass 3 + read 1 > read 4，所以如果出现空3个无需读的，连续读不划算。卧槽，也不一定，如果后续读的是一大片，又可以省很多令牌了）
-    /// TODO: 待优化。后1块（ > 1 包含了 1 的情况）需要读，我就继续读
+    if(diskPoint.preCostToken == 64) return false;
+    
+    /// TODO: 待优化。后 N 块只要有 1 块需要读，我就继续读
     int unitId = _unitId;
-    for (int i = 0; i < 10; ++i){ /// TODO: 调参！！！
-        unitId = _unitId % V + 1;
-        const int& objectId = disk.diskUnits[unitId];
-        if(need_read(_diskId, unitId, objectId)) return true;  // cal_block_id 中的 3 个参数必须匹配
+    for (int i = 0; i < CONTINUE_READ_BLOCK_NUM; ++i){ /// TODO: 调参！！！
+        unitId = unitId % V + 1;
+        const int objectId = disk.diskUnits[unitId];
+        if(request_need_this_block(_diskId, unitId, objectId)) return true;  // cal_block_id 中的 3 个参数必须匹配
     }
     return false;
 }
@@ -530,26 +531,22 @@ void read_action(){
         while(true){ 
             const int unitId = diskPoint.position;      // unitId 不可用引用，因为后面 cal_block_id 时磁头移动了
             const int& objectId = diskUnits[unitId];    // 注意： objectId 可能为 0。不知道为什么没判断居然没报错？
-            // 需要 r、p 但令牌不够，这个磁盘磁头的动作结束         
+            // 需要 p、r 但令牌不够，这个磁盘磁头的动作结束         
             if(!continue_read(i, unitId, objectId)){
                 if(!do_pass(i)) break;
                 else continue;
             }         
             if(!do_read(i)) break; 
-
-            // 累积上报：每读一个块，就把 requests 队列中的 request 的所有相应位置置 true
-            // int blockId = cal_block_id(objectId, i, diskPoint.position); // ！！注意，读之后磁头后移了，找了一下午 bug！！！
             
-            if(objectId == 0) continue; // 为了连续 read，空块也读
-
-            int blockId = cal_block_id(i, unitId, objectId);
-            auto& requests = objects[objectId].requests;
+            if(objectId == 0) continue; // 为了连续 read，空块也读。空块无需更新请求队列、上报请求等
 
             bool preCheck = true;
+            // 遍历 requests 累积上报：每读一个块，就把 requests 队列中的 request 的所有相应位置置 true
+            int blockId = cal_block_id(i, unitId, objectId); // unitId 不可换为 diskPoint.position！注意，读之后磁头后移了，找了一下午 bug！！！
+            auto& requests = objects[objectId].requests;
             for (auto it = requests.begin(); it != requests.end(); ){                
                 Request& request = *it;
-                request.hasRead[blockId] = true;
-                // 每次读取块时检查,超时的请求直接扔了丢入超时队列，也无需上报了（可以减轻 requests 队列，帮助 need_read 判断）
+                // 每次读取块时检查,超时的请求直接扔了丢入超时队列，也无需上报了（或许可以减轻 requests 队列，帮助 need_read 判断）
                 if(TIMESTAMP - request.arriveTime > EXTRA_TIME){
                     it++;
                     requests.pop_front();
@@ -560,6 +557,7 @@ void read_action(){
                     continue;
                 }
 
+                request.hasRead[blockId] = true;
                 if(preCheck && check_request_is_done(request)){ // 如果某一次检查没过，其实就不必检查了，使用 preCheck 记录
                     finishRequests.push_back(request.id);
                     it++; // 防在 pop_front() 前面，以防不测...或者使用 erase()
