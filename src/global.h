@@ -40,7 +40,7 @@ struct Request{
     int id;                 // 请求 id
     int objectId;           // 请求的对象 id
 
-    int arriveTime;         // 请求到达的时刻，暂未使用
+    int arriveTime;         // 请求到达的时刻
     vector<bool> hasRead;   // f(i)：对象的第 i 个块是否读取，i ∈ [1, object.size]
 
     Request(){}
@@ -60,7 +60,7 @@ struct Object{
     vector<vector<int>> replicaBlockUnit;   // f(i,j) = 第 i 个副本、第 j 个块所在的磁盘（块）单元号
 
     deque<Request> requests;                // 未完成的请求队列挂在对象上（用队列，是为了先来先处理）
-    queue<Request> timeoutRequests;         // 这里放超时的 request，暂未使用
+    queue<Request> timeoutRequests;         // 这里放超时的 request, 读取块时维护
 
     Object(){}
     Object(int _id, int _size, int _tagId){

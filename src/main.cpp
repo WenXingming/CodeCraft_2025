@@ -35,7 +35,7 @@ void pre_input_process(){
 
 /// @brief 根据 read 总量进行排序，高的分区放在磁盘前面。因为 write_to_random_partition 从后向前
 void sort_tags(){ 
-    // 根据阅读量排序
+    /// DO: 根据阅读量排序
     std::sort(tags.begin() + 1, tags.end(), [](const Tag& a, const Tag& b) {
         int totalRead1 = 0, totalRead2 = 0;
         for (int i = 1; i < a.freRead.size(); ++i){
@@ -44,7 +44,7 @@ void sort_tags(){
         }
         return totalRead1 >= totalRead2;
     });
-    // 维护 hash 表，快速根据 tagId 找到相应 tag 对象在 tags 的索引
+    /// DO: 维护 hash 表，快速根据 tagId 找到相应 tag 对象在 tags 的索引
     for (int i = 1; i < tagIdToTagsIndex.size(); ++i) {
         for (int j = 1; j < tags.size(); ++j) {
             const Tag& tag = tags[j];
@@ -58,7 +58,7 @@ void sort_tags(){
 
 /// @brief 计算每个分区的 startUnit、endUnit
 void do_partition(){
-    // 计算每个标签占的空间、计算所有标签占的总容量
+    /// DO: 计算每个标签占的空间、计算所有标签占的总容量
     vector<int> tagSpaces(tags.size());
     int totalSpace = 0;
     for (int i = 1; i < tags.size(); ++i){
@@ -68,15 +68,15 @@ void do_partition(){
         }
         totalSpace += tagSpaces[i];
     }
-    // 根据每个标签的百分比，计算应该在磁盘上分配的容量，并计算得到每个标签的区间。NOTE: 10% 剩余（已取消）。
+    /// DO: 根据每个标签的百分比，计算应该在磁盘上分配的容量，并计算得到每个标签的区间。NOTE: 10% free 分区剩余（已取消）。
     vector<int> allocSpaces(tags.size());
     for (int i = 1; i < tags.size(); ++i){
         // allocSpaces[i] = V * 0.9 * (static_cast<double>(tagSpaces[i]) / totalSpace);
         allocSpaces[i] = V * (static_cast<double>(tagSpaces[i]) / totalSpace);
         tags[i].startUnit = tags[i - 1].endUnit;
         tags[i].endUnit = tags[i].startUnit + allocSpaces[i];
-        // if(i == M && tags[i].endUnit > V) tags[i].endUnit = V + 1;  // 不用 *0.9 分空闲分区（用所有硬盘空间分区）的话，就要检查
-        if(i == M) tags[i].endUnit = V + 1; // 避免浮点数导致分区越界；同时也避免少量空间未被利用
+
+        if(i == M) tags[i].endUnit = V + 1; // 避免浮点数导致分区越界；同时也避免尾部少量空间未被利用
     }
 }
 
@@ -107,19 +107,19 @@ void delete_one_object(const int& objectId){
 
 /// @brief 删除操作
 void delete_action(){
-    // 处理输入
+    /// DO: 处理输入
     static vector<int> deleteObjects(MAX_OBJECT_NUM); // 10^6 * 4 = 4MB
     int nDelete;
     scanf("%d", &nDelete);
     for (int i = 1; i <= nDelete; i++) {
         scanf("%d", &deleteObjects[i]);
     }
-    // 磁盘上进行删除
+    /// DO: 磁盘上进行删除
     for (int i = 1; i <= nDelete; i++) {
         int objectId = deleteObjects[i];
         delete_one_object(objectId);
     }
-    // 判题机交互
+    /// DO: 判题机交互
     // 计算撤销请求数量
     int abortNum = 0;   
     for (int i = 1; i <= nDelete; ++i){
@@ -134,13 +134,6 @@ void delete_action(){
         int objcetId = deleteObjects[i];
         Object& object = objects[objcetId];     // 无法加 const，后面修改 requests
         deque<Request>& requests = object.requests;
-
-        // while(!requests.empty()){
-        //     Request& request = requests.front();
-        //     requests.pop_front();
-        //     printf("%d\n", request.id);
-        // }
-
         queue<Request>& timeoutRequests = object.timeoutRequests;
         while (!requests.empty() || !timeoutRequests.empty()) {
             if(!requests.empty()){
@@ -162,13 +155,12 @@ void delete_action(){
 // =============================================================================================
 
 /// @brief 对象尝试写入主分区
-/// TODO: 先尝试找连续的块写，不行再零碎写入。利用双指针找大块空间
 bool write_to_main_partition(const int& diskId, const int& objectId, const int& replicaId){
     vector<int>& diskUnits = disks[diskId].diskUnits;
     Object& object = objects[objectId];
     int tagIndex = tagIdToTagsIndex[object.tagId];
     const Tag& tag = tags[tagIndex];
-    // 副本不能写入重复磁盘
+    // 检查副本不能写入重复磁盘
     for (int i = 1; i <= REP_NUM; ++i){
         if(object.replicaDiskId[i] == diskId) return false;
     }
@@ -179,8 +171,8 @@ bool write_to_main_partition(const int& diskId, const int& objectId, const int& 
         if(restSpace == object.size) break;
     }
     if(restSpace != object.size) return false;
-    // 写入磁盘
-    // 1.1 尝试找连续空间：要找能放下对象的最小连续块（即 >= object.size 但又最小的连续块）
+    /// DO: 写入磁盘: 先尝试找连续的块写，不行再零碎写入，利用双指针找大块空间
+    // 尝试找连续空间：要找能放下对象的最小连续块（即 >= object.size 但又最小的连续块）
     int index = tag.startUnit, size = INT_MAX; // 记录当前连续块的起始位置及大小
     for(int i = tag.startUnit; i + object.size <= tag.endUnit; ++i){
         if(diskUnits[i] != 0) continue;
@@ -189,6 +181,7 @@ bool write_to_main_partition(const int& diskId, const int& objectId, const int& 
         while (j < tag.endUnit && diskUnits[j] == 0) {
             j++;
         }
+
         if(j-i == object.size){ index = i; break;} // 找到了大小最合适的连续块
         else if(j-i < object.size){ i = j; continue;}
         else{
@@ -201,7 +194,7 @@ bool write_to_main_partition(const int& diskId, const int& objectId, const int& 
             }
         }
     }
-    // 1.2 没有大块空间，零碎写入
+    // 没有找到合适的大块空间，零碎写入
     for (int i = index, cnt = 0; i < tag.endUnit && cnt < object.size; ++i){
         if(diskUnits[i] == 0) {
             diskUnits[i] = objectId;
@@ -374,18 +367,22 @@ bool do_read(const int& diskId){
 /// TODO: GAP 是需要调参的，确保这个间隔可以遍历完一个区间
 /// DONE: 设置 3 个或多个 hotTag；并移动磁头到相应位置。经测试，设置 N 个得分最高！
 void update_hot_tags_and_disk_point_position(){ 
-    if (TIMESTAMP % GAP != 0) return; // TIMESTAMP == 1 也更新一下
+    // if (TIMESTAMP % GAP != 0) return;
+    if(TIMESTAMP < GAP){
+        if(TIMESTAMP % 20 != 0) return;
+    }else{
+        if(TIMESTAMP % GAP != 0) return;
+    }
 
     static vector<pair<int, int>> hotTags(M + 1);   // pair<int, int>: {tagId, requestNum}
-    // 更新 hotTags
+    /// DO: 更新 hotTags
     for (int i = 1; i < hotTags.size(); ++i){
         hotTags[i] = { i, tagIdRequestNum[i] };
     }
     std::sort(hotTags.begin(), hotTags.end(), [](const pair<int, int>& x, const pair<int, int>& y) {
         return x.second > y.second;
     });
-
-    // 每一个磁头移动到相应 hotTag 的区间起始位置
+    /// DO: 每一个磁头移动到相应 hotTag 的区间起始位置
     for (int i = 1; i < disks.size(); ++i){
         // const int& tagId = hotTags[(i+1)/2].first;   // (i+2)/3
         const int& tagId = hotTags[i].first;
@@ -460,7 +457,6 @@ bool check_request_is_done(const Request& _request){
 }
 
 /// TODO: 是否可以预读取？
-/// TODO: 维护超时队列，从而增加 need_read 的可靠性
 void read_action(){
     // 处理输入
     int nRead;
