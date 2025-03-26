@@ -384,8 +384,9 @@ void update_hot_tags_and_disk_point_position(){
     });
     /// DO: 每一个磁头移动到相应 hotTag 的区间起始位置
     for (int i = 1; i < disks.size(); ++i){
-        // const int& tagId = hotTags[(i+1)/2].first;   // (i+2)/3
-        const int& tagId = hotTags[i].first;
+        /// WARNING: 每个磁盘头都移动到一个 tag 的 startUnit，最小的数据集上，3 个磁盘只有 2 个 tag，不够分，所以报错！跑不了小数据集
+        /// SOLVE: 避免 hotTag 的数量少于 磁盘数量 造成越界访问
+        const int& tagId = i < hotTags.size() ? hotTags[i].first : hotTags[hotTags.size() - 1].first; // const int& tagId = hotTags[(i+1)/2].first;   // (i+2)/3
         const int& tagsIndex = tagIdToTagsIndex[tagId];
         const Tag& tag = tags[tagsIndex];
         const int& startUnit = tag.startUnit;
