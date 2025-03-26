@@ -316,17 +316,36 @@ void update_disk_point(){
     assert(disks[1].diskPoint.remainToken == G);
 }
 
+int cost_token(const int& _diskId, const char& _action){
+    int costToken = 0;
+
+    if(_action == 'p') costToken = 1;
+    else if(_action == 'j') costToken = G;
+    else if(_action == 'r'){
+        const Disk& disk = disks[_diskId];
+        const DiskPoint& diskPoint = disk.diskPoint;
+        if(diskPoint.preAction != 'r' || TIMESTAMP == 1) costToken = 64;
+        else costToken = std::max(16, static_cast<int>(std::ceil(diskPoint.preCostToken * 0.8)));
+
+    }else assert(false);
+    
+    return costToken;
+}
+
 /// @brief 磁头 pass
 bool do_pass(const int& diskId){
     Disk& disk = disks[diskId];
     DiskPoint& diskPoint = disk.diskPoint;
 
-    if(diskPoint.remainToken < 1) return false;
+    char action = 'p';
+    int cost = cost_token(diskId, action);
+
+    if(diskPoint.remainToken < cost) return false;
     diskPoint.position = diskPoint.position % V + 1;
-    diskPoint.preAction = 'p';
-    diskPoint.preCostToken = 1;
-    diskPoint.remainToken -= 1;
-    diskPoint.cmd += 'p';
+    diskPoint.preAction = action;
+    diskPoint.preCostToken = cost;
+    diskPoint.remainToken -= cost;
+    diskPoint.cmd += action;
     return true;
 }
 
@@ -335,12 +354,15 @@ bool do_jump(const int& diskId, const int& unitId){
     Disk& disk = disks[diskId];
     DiskPoint& diskPoint = disk.diskPoint;
 
+    char action = 'j';
+    int cost = cost_token(diskId, action);
+
     if(diskPoint.remainToken < G) return false;
     diskPoint.position = unitId;
-    diskPoint.preAction = 'j';
-    diskPoint.preCostToken = G;
-    diskPoint.remainToken = 0;
-    diskPoint.cmd = "j " + std::to_string(unitId);
+    diskPoint.preAction = action;
+    diskPoint.preCostToken = cost;
+    diskPoint.remainToken -= cost;
+    diskPoint.cmd = string(1, action) + " " + std::to_string(unitId); // 注意 char 不能直接加 string
     return true;
 }
 
@@ -350,16 +372,15 @@ bool do_read(const int& diskId){
     DiskPoint& diskPoint = disk.diskPoint;
     const auto& diskUnits = disk.diskUnits;
     // 计算花费
-    int cost = 0;
-    if(diskPoint.preAction != 'r' || TIMESTAMP == 1) cost = 64;
-    else cost = std::max(16, static_cast<int>(std::ceil(diskPoint.preCostToken * 0.8)));
+    int action = 'r';
+    int cost = cost_token(diskId, action);
 
     if(diskPoint.remainToken < cost) return false;
     diskPoint.position = diskPoint.position % V + 1;
-    diskPoint.preAction = 'r';
+    diskPoint.preAction = action;
     diskPoint.preCostToken = cost;
     diskPoint.remainToken -= cost;
-    diskPoint.cmd += 'r';
+    diskPoint.cmd += action;
     return true;
 }
 
@@ -432,7 +453,7 @@ int cal_block_id(const int& diskId, const int& unitId, const int& objectId){
     return blockId;
 }
 
-/// @brief 判断一个块是否需要读？这里逻辑比较简单。应该遍历（自后向前） requests 判断这个块是否需要读取（但是队列不可遍历...我改成了双端队列）；其实无需遍历，只需访问最后一个 request 即可得出答案（注意为了防止 segment fault，需要特判 requests.empty()）
+/// @brief 简单判断一个块是否需要读？这里逻辑比较简单：依据请求队列中是否需要这个块。
 bool need_read(const int& diskId, const int& unitId, const int& objectId){
     if(objectId == 0) return false; // bug，特况，先要判断 objectId ！= 0
 
@@ -441,13 +462,34 @@ bool need_read(const int& diskId, const int& unitId, const int& objectId){
     for (auto it = requests.crbegin(); it != requests.crend(); it++){   // 我用成 [crend(), crbegin())了...用反了
         const Request& request = *it;
         const auto& hasRead = request.hasRead;
-        int blockId = cal_block_id(diskId, unitId, objectId);
+        int blockId = cal_block_id(diskId, unitId, objectId); // 确保传入的 objectId != 0
 
-        if (hasRead[blockId] == false) return true; // for 内部只执行一次
+        if (hasRead[blockId] == false) return true; // for 内部只执行一次。只需访问最后一个 request 即可得出答案，队列不可遍历...或随机访问我改成了双端队列
         else return false;
     }
     return false;
 }   
+
+/// @brief 某一个块可能并不需要，但是为了保持连续阅读，有时也需要 read
+/// TODO: 调参，中间断多少个块需要连续读（最好是能够计算出来，从而做出最优决策。然而感觉难以计算最优，只能估计，可以在某一个区间内估计）
+bool continue_read(const int& _diskId, const int& _unitId, const int& _objectId){
+    if(need_read(_diskId, _unitId, _objectId)) return true;
+    
+    const Disk& disk = disks[_diskId];
+    const DiskPoint& diskPoint = disk.diskPoint;
+
+    if(diskPoint.preAction != 'r') return false;
+    const int& preCost = diskPoint.preCostToken;
+    // 经过计算，只需判断后3步（极限假设 preCost = 16，pass 3 + read 1 > read 4，所以如果出现空3个无需读的，连续读不划算。卧槽，也不一定，如果后续读的是一大片，又可以省很多令牌了）
+    /// TODO: 待优化。后1块（ > 1 包含了 1 的情况）需要读，我就继续读
+    int unitId = _unitId;
+    for (int i = 0; i < 10; ++i){ /// TODO: 调参！！！
+        unitId = _unitId % V + 1;
+        const int& objectId = disk.diskUnits[unitId];
+        if(need_read(_diskId, unitId, objectId)) return true;  // cal_block_id 中的 3 个参数必须匹配
+    }
+    return false;
+}
 
 /// @brief 检查一个 request 的 hasRead 数组，判断 request 是否完成
 bool check_request_is_done(const Request& _request){
@@ -489,14 +531,17 @@ void read_action(){
             const int unitId = diskPoint.position;      // unitId 不可用引用，因为后面 cal_block_id 时磁头移动了
             const int& objectId = diskUnits[unitId];    // 注意： objectId 可能为 0。不知道为什么没判断居然没报错？
             // 需要 r、p 但令牌不够，这个磁盘磁头的动作结束         
-            if(!need_read(i, unitId, objectId) || objectId == 0){
+            if(!continue_read(i, unitId, objectId)){
                 if(!do_pass(i)) break;
                 else continue;
             }         
             if(!do_read(i)) break; 
+
             // 累积上报：每读一个块，就把 requests 队列中的 request 的所有相应位置置 true
             // int blockId = cal_block_id(objectId, i, diskPoint.position); // ！！注意，读之后磁头后移了，找了一下午 bug！！！
-            assert(objectId != 0);
+            
+            if(objectId == 0) continue; // 为了连续 read，空块也读
+
             int blockId = cal_block_id(i, unitId, objectId);
             auto& requests = objects[objectId].requests;
 
