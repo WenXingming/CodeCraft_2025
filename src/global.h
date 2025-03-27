@@ -12,6 +12,7 @@
 #include <queue>
 #include <string>
 #include <algorithm>
+#include <numeric>
 #include <chrono>
 
 using namespace std;

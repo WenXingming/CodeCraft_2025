@@ -1,12 +1,16 @@
 #include "global.h"
 
 const bool USE_LEFT_SHIFT = false;   // 使用逆序写
-const bool USE_DFS = true;
-const int DFS_DEPTH = 22;
+const bool USE_DFS = false;
+const int DFS_DEPTH = 17;               // [1, DFS_DEPTH)
+const int CONTINUE_READ_BLOCK_NUM = 10; // 保证连续阅读的调参，后续 CONTINUE_READ_BLOCK_NUM USE_DFS 中只要有一个块要读，就继续读。USE_DFS 为 false 时生效
 
 /// TODO: 调参
-const int GAP = 109;
-const int CONTINUE_READ_BLOCK_NUM = 10; // 保证连续阅读的调参，USE_DFS 为 false 时生效
+/// NOTE: CONTINUE_READ_BLOCK_NUM = 10 的前提下:
+/// NOTE: GAP = 20, 680w; GAP = 30, 794w; GAP = 40, 883w; GAP = 50, 925w; GAP = 60, 927w; GAP = 70, 935w;
+/// NOTE: GAP = 80, 934w; GAP = 90, 930w; GAP = 100, 931w; GAP = 110, 927w; GAP = 120, 918w; GAP = 130, 906w; GAP = 140, 895w;
+/// NOTE: GAP = 150, 898w; GAP = 160, 906w; GAP = 170, 917w; GAP = 180, 918w; GAP = 190, 916w
+const int GAP = 73;
 
 // 下面是初始化操作
 // =============================================================================================
@@ -17,7 +21,7 @@ void init_global_container(){
     for(int i = 1; i < tags.size(); ++i) {
         tags[i].id = i;
     }
-    tagIdToTagsIndex.assign(M + 1, 0); // 运行时 M 有值，分配内存就要写在运行时。写在全局区没用会有 bug！
+    tagIdToTagsIndex.assign(M + 1, 0);      // 运行时 M 有值，分配内存就要写在运行时。写在全局区没用会有 bug！
 
     objects.resize(MAX_OBJECT_NUM + 1);     // 待留写入时初始化每个 object 对象
     disks.assign(N + 1, Disk());
@@ -42,7 +46,7 @@ void pre_input_process(){
 
 /// @brief 根据 read 总量进行排序，高的分区放在磁盘前面。因为 write_to_random_partition 从后向前
 void sort_tags(){ 
-    /// DO: 根据阅读量排序
+    // 根据阅读量排序
     std::sort(tags.begin() + 1, tags.end(), [](const Tag& a, const Tag& b) {
         int totalRead1 = 0, totalRead2 = 0;
         for (int i = 1; i < a.freRead.size(); ++i){
@@ -51,7 +55,7 @@ void sort_tags(){
         }
         return totalRead1 >= totalRead2;
     });
-    /// DO: 维护 hash 表，快速根据 tagId 找到相应 tag 对象在 tags 的索引
+    // 维护 hash 表，快速根据 tagId 找到相应 tag 对象在 tags 的索引
     for (int i = 1; i < tagIdToTagsIndex.size(); ++i) {
         for (int j = 1; j < tags.size(); ++j) {
             const Tag& tag = tags[j];
@@ -63,23 +67,25 @@ void sort_tags(){
     }
 }
 
-/// @brief 计算每个分区的 startUnit、endUnit
+/// @brief 计算每个分区的 startUnit、endUnit。NOTE: 可以按「峰值容量」or「实际容量」进行分区; 经测试「峰值容量」磁盘碎片更少
 void do_partition(){
-    /// DO: 计算每个标签占的空间、计算所有标签占的总容量
     vector<int> tagSpaces(tags.size());
-    int totalSpace = 0;
+    vector<int> maxSpaces(tags.size(), 0);
     for (int i = 1; i < tags.size(); ++i){
         for (int j = 1; j < tags[i].freDel.size(); ++j) {
             tagSpaces[i] += tags[i].freWrite[j];
+            maxSpaces[i] = std::max(maxSpaces[i], tagSpaces[i]);
             tagSpaces[i] -= tags[i].freDel[j];
         }
-        totalSpace += tagSpaces[i];
     }
-    /// DO: 根据每个标签的百分比，计算应该在磁盘上分配的容量，并计算得到每个标签的区间。NOTE: 10% free 分区剩余（已取消）。
+    // 计算每个标签的实际、峰值容量之和
+    // int totalSpace = std::accumulate(tagSpaces.begin(), tagSpaces.end(), 0);
+    int totalMaxSpace = std::accumulate(maxSpaces.begin(), maxSpaces.end(), 0);
+
+    // 根据每个标签的百分比，计算应该在磁盘上分配的容量，并计算得到每个标签的区间。NOTE: 10% free 分区剩余（已取消）。
     vector<int> allocSpaces(tags.size());
     for (int i = 1; i < tags.size(); ++i){
-        // allocSpaces[i] = V * 0.9 * (static_cast<double>(tagSpaces[i]) / totalSpace);
-        allocSpaces[i] = V * (static_cast<double>(tagSpaces[i]) / totalSpace);
+        allocSpaces[i] = V * (static_cast<double>(maxSpaces[i]) / totalMaxSpace);
         tags[i].startUnit = tags[i - 1].endUnit;
         tags[i].endUnit = tags[i].startUnit + allocSpaces[i];
 
@@ -114,19 +120,19 @@ void delete_one_object(const int& objectId){
 
 /// @brief 删除操作
 void delete_action(){
-    /// DO: 处理输入
+    // 处理输入
     static vector<int> deleteObjects(MAX_OBJECT_NUM); // 10^6 * 4 = 4MB
     int nDelete;
     scanf("%d", &nDelete);
     for (int i = 1; i <= nDelete; i++) {
         scanf("%d", &deleteObjects[i]);
     }
-    /// DO: 磁盘上进行删除
+    // 磁盘上进行删除
     for (int i = 1; i <= nDelete; i++) {
         int objectId = deleteObjects[i];
         delete_one_object(objectId);
     }
-    /// DO: 判题机交互
+    // 判题机交互
     // 计算撤销请求数量
     int abortNum = 0;   
     for (int i = 1; i <= nDelete; ++i){
@@ -178,8 +184,7 @@ bool write_to_main_partition(const int& diskId, const int& objectId, const int& 
         if(restSpace == object.size) break;
     }
     if(restSpace != object.size) return false;
-    /// DO: 写入磁盘: 先尝试找连续的块写，不行再零碎写入，利用双指针找大块空间
-    // 尝试找连续空间：要找能放下对象的最小连续块（即 >= object.size 但又最小的连续块）
+    // 写入磁盘: 先尝试找连续的块写，不行再零碎写入，利用双指针找大块空间，要找能放下对象的最小连续块（即 >= object.size 但又最小的连续块）
     int index = tag.startUnit, size = INT_MAX; // 记录当前连续块的起始位置及大小
     for(int i = tag.startUnit; i + object.size <= tag.endUnit; ++i){
         if(diskUnits[i] != 0) continue;
@@ -259,7 +264,7 @@ bool write_one_object(const int& objectId){
             }
         }
         if(isWriteSucess) continue;
-        // 无奈，只能随机找位置写入
+        // 无奈，只能从后到前见缝插针
         for (int i = 1; i <= N; ++i){
             int writeDiskId = tag.update_random_disk_id();
             if(write_to_random_partition(writeDiskId, objectId, k)){
@@ -273,7 +278,6 @@ bool write_one_object(const int& objectId){
 }
 
 void print_common(const int& _objectId){
-    // printf("Common order: ==============================\n");
     const Object& object = objects[_objectId]; // 引用是个很危险的使用，它可以提高效率，但也有更改原始数据的风险。所以最好加 const
     printf("%d\n", object.id);
     for (int i = 1; i <= REP_NUM; ++i) {
@@ -287,16 +291,14 @@ void print_common(const int& _objectId){
 
 /// @brief 与判题机交互逆序写。注：本地 object 维护的信息不变，只是告诉判题机块的写入顺序变了。搭配 cal_block_id() 使用
 void print_left_shift(const int& _objectId){
-    // printf("Inverse order: ==============================\n");
     const Object& object = objects[_objectId];
     printf("%d\n", object.id);
     for (int i = 1; i <= REP_NUM; ++i){
         printf("%d", object.replicaDiskId[i]);
-
         // 左移输出
         vector<int> vec = object.replicaBlockUnit[i];
-        // int leftShiftNum = i - 1;
-        // auto mid = vec.begin() + 1 + leftShiftNum; // 注：vec.size() = object.size + 1
+        /* int leftShiftNum = i - 1;
+        auto mid = vec.begin() + 1 + leftShiftNum; // 注：vec.size() = object.size + 1 */
         int leftShiftNum = ((object.size - 1) / (REP_NUM - 1)) * (i - 1); // 通过偏移计算左移位数。总偏移 / 需要偏移 k 次
         auto mid = vec.begin() + 1 + leftShiftNum;
         if(mid >= vec.begin() + 1 && mid < vec.end()){  // 函数要求 mid ∈ [first, last)
@@ -422,30 +424,53 @@ bool do_read(const int& diskId){
     return true;
 }
 
-/// @brief 每隔 【GAP】 根据 tag 的请求趋势图尝试更新（重置）所有磁头的起始 read 位置
-/// TODO: GAP 是需要调参的，确保这个间隔可以遍历完一个区间
-/// DONE: 设置 3 个或多个 hotTag；并移动磁头到相应位置。经测试，设置 N 个得分最高！
+/// @brief 每隔 GAP 根据 tag 的请求趋势图【等信息】尝试更新（重置）所有磁头的起始 read 位置
+/// NOTE: GAP 是需要调参的，确保这个间隔可以遍历完一个区间
+/// TODO: 设置 3 个或多个 hotTag；并移动磁头到相应位置。经测试，设置 N 个得分最高！不是 N 个最高，而是 N / 2 个时，我应该把磁头分散开来，而不是相邻磁头指向同一个区间，而是隔 N / 2个磁盘的磁头指向同一个区间。所以是因为我的实施不好
 void update_hot_tags_and_disk_point_position(){ 
-    // if (TIMESTAMP % GAP != 0) return;
-    if(TIMESTAMP < GAP){
-        if(TIMESTAMP % 20 != 0) return;
-    }else{
-        if(TIMESTAMP % GAP != 0) return;
-    }
+    if (TIMESTAMP % GAP != 0) return;
 
     static vector<pair<int, int>> hotTags(M + 1);   // pair<int, int>: {tagId, requestNum}
-    /// DO: 更新 hotTags
+    // 更新 hotTags
     for (int i = 1; i < hotTags.size(); ++i){
         hotTags[i] = { i, tagIdRequestNum[i] };
     }
+    /// TODO: 综合 freRead / space
     std::sort(hotTags.begin(), hotTags.end(), [](const pair<int, int>& x, const pair<int, int>& y) {
         return x.second > y.second;
     });
-    /// DO: 每一个磁头移动到相应 hotTag 的区间起始位置
+    // 每一个磁头移动到相应 hotTag 的区间起始位置
+    int x = 1;
+    int y = 1;
+    int z = 1;
+    int u = 1;
+    int v = 1;
     for (int i = 1; i < disks.size(); ++i){
         /// WARNING: 每个磁盘头都移动到一个 tag 的 startUnit，最小的数据集上，3 个磁盘只有 2 个 tag，不够分，所以报错！跑不了小数据集
         /// SOLVE: 避免 hotTag 的数量少于 磁盘数量 造成越界访问
-        const int& tagId = i < hotTags.size() ? hotTags[i].first : hotTags[hotTags.size() - 1].first; // const int& tagId = hotTags[(i+1)/2].first;   // (i+2)/3
+
+        /// TODO: 这里逻辑写的不好，相当于写死了 10 个磁盘
+        /// NOTE: N 个 hotTag, 本地 887w 分
+        // int tagId = i < hotTags.size() ? hotTags[i].first : hotTags[hotTags.size() - 1].first; 
+        /// NOTE: N/2 个 hotTag, 但是指向同一个区间的磁头相邻（未隔开）, 本地 768w 分
+        // const int& tagId = hotTags[(i+1)/2].first;
+        /// NOTE: N/2 个 hotTag, 但是指向同一个区间的磁头隔开, 本地 908w 分
+        int tagId = 0;
+        if(i <= N / 2) { tagId = x < hotTags.size() ? hotTags[x].first : hotTags[hotTags.size()-1].first; x++; }
+        else { tagId = y < hotTags.size() ? hotTags[y].first : hotTags[hotTags.size()-1].first; y++; }
+        /// NOTE: N/3 个 hotTag, 指向同一个区间的磁头隔开, 本地 891w 分
+        // int tagId = 0;
+        // if(i <= N / 3) { tagId = x < hotTags.size() ? hotTags[x].first : hotTags[hotTags.size()-1].first; x++; }
+        // else if(i > N / 3 && i <= (N / 3)* 2){ tagId = y < hotTags.size() ? hotTags[y].first : hotTags[hotTags.size()-1].first; y++; }
+        // else { tagId = z < hotTags.size() ? hotTags[z].first : hotTags[hotTags.size()-1].first; z++; }
+        /// NOTE: N/4 个 hotTag, 指向同一个区间的磁头隔开。分为5部分
+        // int tagId = 0;
+        // if(i <= N / 4) { tagId = x < hotTags.size() ? hotTags[x].first : hotTags[hotTags.size()-1].first; x++; }
+        // else if(i > N / 4 && i <= (N / 4)* 2){ tagId = y < hotTags.size() ? hotTags[y].first : hotTags[hotTags.size()-1].first; y++; }
+        // else if(i > (N / 4)* 2 && i <= (N / 4)* 3){ tagId = z < hotTags.size() ? hotTags[z].first : hotTags[hotTags.size()-1].first; z++; }
+        // else if(i > (N / 4)* 3 && i <= (N / 4)* 4){ tagId = u < hotTags.size() ? hotTags[u].first : hotTags[hotTags.size()-1].first; u++; }
+        // else{ tagId = v < hotTags.size() ? hotTags[v].first : hotTags[hotTags.size()-1].first; v++; }
+
         const int& tagsIndex = tagIdToTagsIndex[tagId];
         const Tag& tag = tags[tagsIndex];
         const int& startUnit = tag.startUnit;
@@ -570,62 +595,62 @@ bool determine_read(const int& _diskId, const int& _unitId, const int& _objectId
     std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
     auto duration = end - begin;
     int durationSeconds = std::chrono::duration_cast<std::chrono::seconds>(duration).count();
-    if(USE_DFS && durationSeconds <= 260){ // 255s 前用 DFS，时间不够了留 40s 够了能跑完
-        if(TIMESTAMP >= 10001 && TIMESTAMP < 20000){
-            // 使用 DFS 判断是否需要读
-            int minCost = INT_MAX;
-            string minCostActions = "";
-            int setDepth = DFS_DEPTH-2;
-            dfs(minCost, minCostActions, 0, "", diskPoint.preAction, diskPoint.preCostToken, 1, setDepth, _diskId, _unitId, disks[_diskId].diskUnits[_unitId]);
-            assert(minCostActions.size() == DFS_DEPTH - 1); // dfs生效
+    if(USE_DFS && durationSeconds <= 3600){ // 255s 前用 DFS，时间不够了留 40s 够了能跑完
+        // if(TIMESTAMP >= 10001 && TIMESTAMP < 20000){
+        //     // 使用 DFS 判断是否需要读
+        //     int minCost = INT_MAX;
+        //     string minCostActions = "";
+        //     int setDepth = DFS_DEPTH-2;
+        //     dfs(minCost, minCostActions, 0, "", diskPoint.preAction, diskPoint.preCostToken, 1, setDepth, _diskId, _unitId, disks[_diskId].diskUnits[_unitId]);
+        //     assert(minCostActions.size() == DFS_DEPTH - 1); // dfs生效
 
-            if (minCostActions[0] == 'p') return false;
-            else if (minCostActions[0] == 'r') return true;
-            else assert(false);
-        }else if(TIMESTAMP >= 20000 && TIMESTAMP < 35000){
-            // 使用 DFS 判断是否需要读
-            int minCost = INT_MAX;
-            string minCostActions = "";
-            int setDepth = DFS_DEPTH-2;
-            dfs(minCost, minCostActions, 0, "", diskPoint.preAction, diskPoint.preCostToken, 1, setDepth, _diskId, _unitId, disks[_diskId].diskUnits[_unitId]);
-            assert(minCostActions.size() == DFS_DEPTH - 1); // dfs生效
+        //     if (minCostActions[0] == 'p') return false;
+        //     else if (minCostActions[0] == 'r') return true;
+        //     else assert(false);
+        // }else if(TIMESTAMP >= 20000 && TIMESTAMP < 35000){
+        //     // 使用 DFS 判断是否需要读
+        //     int minCost = INT_MAX;
+        //     string minCostActions = "";
+        //     int setDepth = DFS_DEPTH-2;
+        //     dfs(minCost, minCostActions, 0, "", diskPoint.preAction, diskPoint.preCostToken, 1, setDepth, _diskId, _unitId, disks[_diskId].diskUnits[_unitId]);
+        //     assert(minCostActions.size() == DFS_DEPTH - 1); // dfs生效
 
-            if (minCostActions[0] == 'p') return false;
-            else if (minCostActions[0] == 'r') return true;
-            else assert(false);
-        }else if(TIMESTAMP >= 35000 && TIMESTAMP < 75000){
-            // 使用 DFS 判断是否需要读
-            int minCost = INT_MAX;
-            string minCostActions = "";
-            int setDepth = DFS_DEPTH;
-            dfs(minCost, minCostActions, 0, "", diskPoint.preAction, diskPoint.preCostToken, 1, setDepth, _diskId, _unitId, disks[_diskId].diskUnits[_unitId]);
-            assert(minCostActions.size() == DFS_DEPTH - 1); // dfs生效
+        //     if (minCostActions[0] == 'p') return false;
+        //     else if (minCostActions[0] == 'r') return true;
+        //     else assert(false);
+        // }else if(TIMESTAMP >= 35000 && TIMESTAMP < 75000){
+        //     // 使用 DFS 判断是否需要读
+        //     int minCost = INT_MAX;
+        //     string minCostActions = "";
+        //     int setDepth = DFS_DEPTH;
+        //     dfs(minCost, minCostActions, 0, "", diskPoint.preAction, diskPoint.preCostToken, 1, setDepth, _diskId, _unitId, disks[_diskId].diskUnits[_unitId]);
+        //     assert(minCostActions.size() == DFS_DEPTH - 1); // dfs生效
 
-            if (minCostActions[0] == 'p') return false;
-            else if (minCostActions[0] == 'r') return true;
-            else assert(false);
-        }else{
-            // 使用 DFS 判断是否需要读
-            int minCost = INT_MAX;
-            string minCostActions = "";
-            int setDepth = DFS_DEPTH-1;
-            dfs(minCost, minCostActions, 0, "", diskPoint.preAction, diskPoint.preCostToken, 1, setDepth, _diskId, _unitId, disks[_diskId].diskUnits[_unitId]);
-            assert(minCostActions.size() == DFS_DEPTH - 1); // dfs生效
+        //     if (minCostActions[0] == 'p') return false;
+        //     else if (minCostActions[0] == 'r') return true;
+        //     else assert(false);
+        // }else{
+        //     // 使用 DFS 判断是否需要读
+        //     int minCost = INT_MAX;
+        //     string minCostActions = "";
+        //     int setDepth = DFS_DEPTH-1;
+        //     dfs(minCost, minCostActions, 0, "", diskPoint.preAction, diskPoint.preCostToken, 1, setDepth, _diskId, _unitId, disks[_diskId].diskUnits[_unitId]);
+        //     assert(minCostActions.size() == DFS_DEPTH - 1); // dfs生效
 
-            if (minCostActions[0] == 'p') return false;
-            else if (minCostActions[0] == 'r') return true;
-            else assert(false);
-        }
-        // // 使用 DFS 判断是否需要读
-        // int minCost = INT_MAX;
-        // string minCostActions = "";
-        // int setDepth = DFS_DEPTH;
-        // dfs(minCost, minCostActions, 0, "", diskPoint.preAction, diskPoint.preCostToken, 1, setDepth, _diskId, _unitId, disks[_diskId].diskUnits[_unitId]);
-        // assert(minCostActions.size() == DFS_DEPTH-1);            // dfs生效
+        //     if (minCostActions[0] == 'p') return false;
+        //     else if (minCostActions[0] == 'r') return true;
+        //     else assert(false);
+        // }
+        // 使用 DFS 判断是否需要读
+        int minCost = INT_MAX;
+        string minCostActions = "";
+        int setDepth = DFS_DEPTH;
+        dfs(minCost, minCostActions, 0, "", diskPoint.preAction, diskPoint.preCostToken, 1, setDepth, _diskId, _unitId, disks[_diskId].diskUnits[_unitId]);
+        assert(minCostActions.size() == DFS_DEPTH-1);            // dfs生效
 
-        // if(minCostActions[0] == 'p') return false;
-        // else if(minCostActions[0] == 'r') return true;
-        // else assert(false);
+        if(minCostActions[0] == 'p') return false;
+        else if(minCostActions[0] == 'r') return true;
+        else assert(false);
     }else{
         /// TODO: 待优化。后 N 块只要有 1 块需要读，我就继续读
         int unitId = _unitId;
