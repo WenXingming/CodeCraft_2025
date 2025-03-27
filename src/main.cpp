@@ -1,9 +1,12 @@
 #include "global.h"
-#define GAP 125 // 更新 read 的起始 Tag（其区间的 startPoint）。Todo：应该根据 preTag 的区间大小确定更新磁头位置的间隔时间
-#define CONTINUE_READ_BLOCK_NUM 8   // 保证连续阅读的调参
 
 const bool USE_LEFT_SHIFT = false;   // 使用逆序写
 const bool USE_DFS = true;
+const int DFS_DEPTH = 22;
+
+/// TODO: 调参
+const int GAP = 109;
+const int CONTINUE_READ_BLOCK_NUM = 10; // 保证连续阅读的调参，USE_DFS 为 false 时生效
 
 // 下面是初始化操作
 // =============================================================================================
@@ -529,9 +532,9 @@ bool request_need_this_block(const int& diskId, const int& unitId, const int& ob
 /// @brief 遍历一棵高度为 10 的树，找到后 10 步里面最优的走法（只含p、r，如：prrprppprr）
 /// @attention 若该单元格 request_need_this_block 则必须走 r
 /// TODO: 剪枝
-void dfs(int& minCost, string& minCostActions, int cost, string actions, char preAction, int preCost, int depth, const int& _diskId, int _unitId, int _objectId){
+void dfs(int& minCost, string& minCostActions, int cost, string actions, char preAction, int preCost, int depth, int& setDepth,const int& _diskId, int _unitId, int _objectId){
     // 控制递归树高度，同时处理叶子节点
-    if(depth == 21){
+    if(depth == DFS_DEPTH){
         if(cost < minCost){ // 处理叶子节点
             minCost = cost;
             minCostActions = actions;
@@ -545,26 +548,85 @@ void dfs(int& minCost, string& minCostActions, int cost, string actions, char pr
     int thisCost = (preAction != 'r' || TIMESTAMP == 1) ? 64 : std::max(16, static_cast<int>(std::ceil(preCost * 0.8))); // 计算 r 的 cost
     if(request_need_this_block(_diskId, _unitId, _objectId)){
         // 只能选 r
-        dfs(minCost, minCostActions, cost + thisCost, actions + "r", 'r', thisCost, depth + 1, _diskId, nextUnitId, nextObjectId);
+        dfs(minCost, minCostActions, cost + thisCost, actions + "r", 'r', thisCost, depth + 1, setDepth, _diskId, nextUnitId, nextObjectId);
     }else{
         // 可以选 p 或 r
-        dfs(minCost, minCostActions, cost + 1, actions + "p", 'p', 1, depth + 1, _diskId, nextUnitId, nextObjectId);
-        dfs(minCost, minCostActions, cost + thisCost, actions + "r", 'r', thisCost, depth + 1, _diskId, nextUnitId, nextObjectId);
+        dfs(minCost, minCostActions, cost + 1, actions + "p", 'p', 1, depth + 1, setDepth, _diskId, nextUnitId, nextObjectId);
+        dfs(minCost, minCostActions, cost + thisCost, actions + "r", 'r', thisCost, depth + 1, setDepth, _diskId, nextUnitId, nextObjectId);
     }
 }
 
 /// @brief 某一个块可能并不需要，但是为了保持连续阅读，有时也需要 read
-/// TODO: 调参！！！中间断多少个块需要连续读（最好是能够计算出来，从而做出最优决策。然而感觉难以计算最优，只能估计，可以在某一个区间内估计）
 bool determine_read(const int& _diskId, const int& _unitId, const int& _objectId){
+    static std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
+    if(TIMESTAMP < 10000) return request_need_this_block(_diskId, _unitId, _objectId);
     if(request_need_this_block(_diskId, _unitId, _objectId)) return true;
 
     const Disk& disk = disks[_diskId];
     const DiskPoint& diskPoint = disk.diskPoint;
-
     if(diskPoint.preAction != 'r') return false;
     if(diskPoint.preCostToken == 64) return false;
     
-    if(!USE_DFS){
+    std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
+    auto duration = end - begin;
+    int durationSeconds = std::chrono::duration_cast<std::chrono::seconds>(duration).count();
+    if(USE_DFS && durationSeconds <= 260){ // 255s 前用 DFS，时间不够了留 40s 够了能跑完
+        if(TIMESTAMP >= 10001 && TIMESTAMP < 20000){
+            // 使用 DFS 判断是否需要读
+            int minCost = INT_MAX;
+            string minCostActions = "";
+            int setDepth = DFS_DEPTH-2;
+            dfs(minCost, minCostActions, 0, "", diskPoint.preAction, diskPoint.preCostToken, 1, setDepth, _diskId, _unitId, disks[_diskId].diskUnits[_unitId]);
+            assert(minCostActions.size() == DFS_DEPTH - 1); // dfs生效
+
+            if (minCostActions[0] == 'p') return false;
+            else if (minCostActions[0] == 'r') return true;
+            else assert(false);
+        }else if(TIMESTAMP >= 20000 && TIMESTAMP < 35000){
+            // 使用 DFS 判断是否需要读
+            int minCost = INT_MAX;
+            string minCostActions = "";
+            int setDepth = DFS_DEPTH-2;
+            dfs(minCost, minCostActions, 0, "", diskPoint.preAction, diskPoint.preCostToken, 1, setDepth, _diskId, _unitId, disks[_diskId].diskUnits[_unitId]);
+            assert(minCostActions.size() == DFS_DEPTH - 1); // dfs生效
+
+            if (minCostActions[0] == 'p') return false;
+            else if (minCostActions[0] == 'r') return true;
+            else assert(false);
+        }else if(TIMESTAMP >= 35000 && TIMESTAMP < 75000){
+            // 使用 DFS 判断是否需要读
+            int minCost = INT_MAX;
+            string minCostActions = "";
+            int setDepth = DFS_DEPTH;
+            dfs(minCost, minCostActions, 0, "", diskPoint.preAction, diskPoint.preCostToken, 1, setDepth, _diskId, _unitId, disks[_diskId].diskUnits[_unitId]);
+            assert(minCostActions.size() == DFS_DEPTH - 1); // dfs生效
+
+            if (minCostActions[0] == 'p') return false;
+            else if (minCostActions[0] == 'r') return true;
+            else assert(false);
+        }else{
+            // 使用 DFS 判断是否需要读
+            int minCost = INT_MAX;
+            string minCostActions = "";
+            int setDepth = DFS_DEPTH-1;
+            dfs(minCost, minCostActions, 0, "", diskPoint.preAction, diskPoint.preCostToken, 1, setDepth, _diskId, _unitId, disks[_diskId].diskUnits[_unitId]);
+            assert(minCostActions.size() == DFS_DEPTH - 1); // dfs生效
+
+            if (minCostActions[0] == 'p') return false;
+            else if (minCostActions[0] == 'r') return true;
+            else assert(false);
+        }
+        // // 使用 DFS 判断是否需要读
+        // int minCost = INT_MAX;
+        // string minCostActions = "";
+        // int setDepth = DFS_DEPTH;
+        // dfs(minCost, minCostActions, 0, "", diskPoint.preAction, diskPoint.preCostToken, 1, setDepth, _diskId, _unitId, disks[_diskId].diskUnits[_unitId]);
+        // assert(minCostActions.size() == DFS_DEPTH-1);            // dfs生效
+
+        // if(minCostActions[0] == 'p') return false;
+        // else if(minCostActions[0] == 'r') return true;
+        // else assert(false);
+    }else{
         /// TODO: 待优化。后 N 块只要有 1 块需要读，我就继续读
         int unitId = _unitId;
         for (int i = 0; i < CONTINUE_READ_BLOCK_NUM; ++i) { /// TODO: 调参！！！
@@ -573,18 +635,7 @@ bool determine_read(const int& _diskId, const int& _unitId, const int& _objectId
             if (request_need_this_block(_diskId, unitId, objectId)) return true; // cal_block_id 中的 3 个参数必须匹配
         }
         return false;
-    }else{
-        // 使用 DFS 判断是否需要读
-        int minCost = INT_MAX;
-        string minCostActions = "";
-        dfs(minCost, minCostActions, 0, "", diskPoint.preAction, diskPoint.preCostToken, 1, _diskId, _unitId, disks[_diskId].diskUnits[_unitId]);
-
-        assert(minCost <= 640);           // dfs生效
-        assert(!minCostActions.empty());
-        if(minCostActions[0] == 'p') return false;
-        else if(minCostActions[0] == 'r') return true;
     }
-    
 }
 
 /// @brief 检查一个 request 的 hasRead 数组，判断 request 是否完成
