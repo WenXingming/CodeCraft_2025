@@ -2,7 +2,7 @@
 
 const bool USE_LEFT_SHIFT = false;   // 使用逆序写
 const bool USE_DFS = false;
-const int DFS_DEPTH = 17;            // [1, DFS_DEPTH)
+const int DFS_DEPTH = 11;            // [1, DFS_DEPTH)
 
 /// NOTE: 本地 868， 云端 2577
 
@@ -17,7 +17,7 @@ const int CONTINUE_READ_BLOCK_NUM = 8;  // USE_DFS 为 false 时生效。保证�
 /// NOTE: GAP = 65, 8725497.7975; GAP = 75, 8723257.4625; GAP = 85, 8689049.0050; GAP = 95, 8718773.2575;
 /// NOTE: GAP = 66, 8714820.0900; GAP = 67, 8730971.0375; GAP = 68, 8730653.1375; GAP = 69, 8696208.7550;
 /// NOTE: GAP = 71, 8700299.4800; GAP = 72, 8700659.7750; GAP = 73, 8698820.2275; 
-const int GAP = 67;
+const int GAP = 65;
 
 // 下面是初始化操作
 // =============================================================================================
@@ -76,7 +76,7 @@ void sort_tags(){
 
 /// @brief 计算每个分区的 startUnit、endUnit。NOTE: 可以按「峰值容量」or「实际容量」进行分区; 经测试「峰值容量」磁盘碎片更少，分数更高
 void do_partition(){
-    vector<int> tagSpaces(tags.size());
+    vector<int> tagSpaces(tags.size(), 0);
     vector<int> maxSpaces(tags.size(), 0);
     for (int i = 1; i < tags.size(); ++i){
         for (int j = 1; j < tags[i].freDel.size(); ++j) {
@@ -140,8 +140,7 @@ void delete_action(){
         int objectId = deleteObjects[i];
         delete_one_object(objectId);
     }
-    // 判题机交互
-    // 计算撤销请求数量
+    // 判题机交互: 计算撤销请求数量
     int abortNum = 0;   
     for (int i = 1; i <= nDelete; ++i){
         int objcetId = deleteObjects[i];
@@ -150,7 +149,7 @@ void delete_action(){
         abortNum += object.requests.size() + object.timeoutRequests.size();
     }
     printf("%d\n", abortNum);
-    // 打印撤销请求 id（并维护请求数据结构）
+    // 判题机交互: 打印撤销请求 id（并维护请求数据结构）
     for (int i = 1; i <= nDelete; ++i){ 
         int objcetId = deleteObjects[i];
         Object& object = objects[objcetId];     // 无法加 const，后面修改 requests
@@ -161,10 +160,15 @@ void delete_action(){
                 Request& request = requests.front();
                 requests.pop_front();
                 printf("%d\n", request.id);
+                // 请求趋势图也要更新
+                const int& tagId = object.tagId;
+                tagIdRequestNum[tagId]--;
+                // assert(tagIdRequestNum[tagId] >= 0);
             }else if(!timeoutRequests.empty()){
                 Request& request = timeoutRequests.front();
                 timeoutRequests.pop();
                 printf("%d\n", request.id);
+                // 请求趋势图也要更新, 超时的已经在插入请求到请求队列时更新了
             }
         }
     }
@@ -356,7 +360,7 @@ void write_action(){
 // =============================================================================================
 
 /// @brief 每个时间片初始化所有磁头令牌为 G、还有命令
-void update_disk_point(){
+void reset_disk_point(){
     for(int i = 1; i < disks.size(); ++i){
         disks[i].diskPoint.remainToken = G;
         disks[i].diskPoint.cmd = "";
@@ -446,39 +450,44 @@ void update_hot_tags_and_disk_point_position(){
     /// TODO: 综合 freRead / space
     std::sort(hotTags.begin(), hotTags.end(), [](const pair<int, int>& x, const pair<int, int>& y) {
         // 计算至今的 space
-        int tagsIndex1 = tagIdToTagsIndex[x.first], tagsIndex2 = tagIdToTagsIndex[y.first];
-        Tag& tag1 = tags[tagsIndex1];
-        Tag& tag2 = tags[tagsIndex2];
-        for(int i = 1; i <= (TIMESTAMP - 1) / FRE_PER_SLICING + 1 /* && i < tag1.freRead.size() */; ++i){
-            
-        }
+        // int tagsIndex1 = tagIdToTagsIndex[x.first], tagsIndex2 = tagIdToTagsIndex[y.first];
+        // Tag& tag1 = tags[tagsIndex1];
+        // Tag& tag2 = tags[tagsIndex2];
+        // for(int i = 1; i <= (TIMESTAMP - 1) / FRE_PER_SLICING + 1 /* && i < tag1.freRead.size() */; ++i){
+
+        // }
         
         return x.second > y.second;
     });
     // 每一个磁头移动到相应 hotTag 的区间起始位置
+    // srand(time(NULL));
+    // int x = rand() % (N/2) + 1;
+    // int y = rand() % (N/2) + 1;
+
+    // static int x = 1;
+    // static int y = 1;
+
     int x = 1;
     int y = 1;
     int z = 1;
-    int u = 1;
-    int v = 1;
     for (int i = 1; i < disks.size(); ++i){
         /// WARNING: 每个磁盘头都移动到一个 tag 的 startUnit，最小的数据集上，3 个磁盘只有 2 个 tag，不够分，所以报错！跑不了小数据集
         /// SOLVE: 避免 hotTag 的数量少于 磁盘数量 造成越界访问
-
         /// TODO: 这里逻辑写的不好，相当于写死了 10 个磁盘
+
         /// NOTE: N 个 hotTag, 本地 887w 分
         // int tagId = i < hotTags.size() ? hotTags[i].first : hotTags[hotTags.size() - 1].first; 
         /// NOTE: N/2 个 hotTag, 但是指向同一个区间的磁头相邻（未隔开）, 本地 768w 分
         // const int& tagId = hotTags[(i+1)/2].first;
         /// NOTE: N/2 个 hotTag, 但是指向同一个区间的磁头隔开, 本地 908w 分
-        int tagId = 0;
-        if(i <= N / 2) { tagId = x < hotTags.size() ? hotTags[x].first : hotTags[hotTags.size()-1].first; x++; }
-        else { tagId = y < hotTags.size() ? hotTags[y].first : hotTags[hotTags.size()-1].first; y++; }
-        /// NOTE: N/3 个 hotTag, 指向同一个区间的磁头隔开, 本地 891w 分
         // int tagId = 0;
-        // if(i <= N / 3) { tagId = x < hotTags.size() ? hotTags[x].first : hotTags[hotTags.size()-1].first; x++; }
-        // else if(i > N / 3 && i <= (N / 3)* 2){ tagId = y < hotTags.size() ? hotTags[y].first : hotTags[hotTags.size()-1].first; y++; }
-        // else { tagId = z < hotTags.size() ? hotTags[z].first : hotTags[hotTags.size()-1].first; z++; }
+        // if(i <= N/2) { tagId = x < hotTags.size() ? hotTags[x].first : hotTags[hotTags.size()-1].first; x = x % (N/2) + 1; }
+        // else { tagId = y < hotTags.size() ? hotTags[y].first : hotTags[hotTags.size()-1].first; y = y % (N/2) + 1; }
+        /// NOTE: N/3 个 hotTag, 指向同一个区间的磁头隔开, 本地 891w 分
+        int tagId = 0;
+        if(i <= N / 3) { tagId = x < hotTags.size() ? hotTags[x].first : hotTags[hotTags.size()-1].first; x++; }
+        else if(i > N / 3 && i <= (N / 3)* 2){ tagId = y < hotTags.size() ? hotTags[y].first : hotTags[hotTags.size()-1].first; y++; }
+        else { tagId = z < hotTags.size() ? hotTags[z].first : hotTags[hotTags.size()-1].first; z++; }
         /// NOTE: N/4 个 hotTag, 指向同一个区间的磁头隔开。分为5部分
         // int tagId = 0;
         // if(i <= N / 4) { tagId = x < hotTags.size() ? hotTags[x].first : hotTags[hotTags.size()-1].first; x++; }
@@ -486,10 +495,10 @@ void update_hot_tags_and_disk_point_position(){
         // else if(i > (N / 4)* 2 && i <= (N / 4)* 3){ tagId = z < hotTags.size() ? hotTags[z].first : hotTags[hotTags.size()-1].first; z++; }
         // else if(i > (N / 4)* 3 && i <= (N / 4)* 4){ tagId = u < hotTags.size() ? hotTags[u].first : hotTags[hotTags.size()-1].first; u++; }
         // else{ tagId = v < hotTags.size() ? hotTags[v].first : hotTags[hotTags.size()-1].first; v++; }
-
         const int& tagsIndex = tagIdToTagsIndex[tagId];
         const Tag& tag = tags[tagsIndex];
         const int& startUnit = tag.startUnit;
+
         // 对于每一个磁头，计算消耗，判断是用 j or p
         Disk& disk = disks[i];
         DiskPoint& diskPoint = disk.diskPoint;
@@ -507,8 +516,11 @@ void update_hot_tags_and_disk_point_position(){
 }
 
 /// @brief 读一个块时，需要判断其是第几个块，以便于把请求的 hasRead 相应位置置 true
-int cal_block_id(const int& diskId, const int& unitId, const int& objectId){
-    assert(objectId != 0);  // 确保 object 不为 0，以防万一。主要是这个特况需要函数外部确认
+int cal_block_id(const int& diskId, const int& unitId){
+    // 确保 object 不为 0，以防万一。主要是这个特况需要函数外部确认,即外部调用该函数时要确保这个磁盘位置放的有对象...
+    assert(disks[diskId].diskUnits[unitId] != 0);  
+
+    const int& objectId = disks[diskId].diskUnits[unitId];
     const Object& object = objects[objectId];
     // 得到块的副本号
     int replicaId = 0;
@@ -519,10 +531,10 @@ int cal_block_id(const int& diskId, const int& unitId, const int& objectId){
         }
     }
     assert(replicaId != 0);
-
+    // 得到块的 blockId
     int blockId = 0;
     if(!USE_LEFT_SHIFT){
-        // 得到块的 blockId（未使用左移打印写）
+        // 未使用左移打印写
         for (int i = 1; i < object.replicaBlockUnit[replicaId].size(); ++i) {
             assert(object.size + 1 == object.replicaBlockUnit[replicaId].size());
             if (object.replicaBlockUnit[replicaId][i] == unitId) {
@@ -531,7 +543,9 @@ int cal_block_id(const int& diskId, const int& unitId, const int& objectId){
             }
         }
         assert(blockId != 0); // 确保传入的 diskId、unitId、objectId 对的上，在 object 中有记录
-    }else{
+        return blockId;
+    }
+    if(USE_LEFT_SHIFT){
         // 使用逆序写（左移打印写）时，读取时也要左移（不是逆运算，右移！）相应位数，确定读取的块是第几块
         auto vec = object.replicaBlockUnit[replicaId];
         // int leftShiftNum = replicaId - 1;
@@ -543,26 +557,38 @@ int cal_block_id(const int& diskId, const int& unitId, const int& objectId){
         } // 否则不旋转
 
         for (int i = 1; i < vec.size(); ++i) {
-            if (vec[i] == unitId) {
-                blockId = i;
-                break;
-            }
+            if (vec[i] == unitId) { blockId = i; break; }
         }
         assert(blockId != 0); // 确保传入的 diskId、unitId、objectId 对的上，在 object 中有记录
+        return blockId;
     }
-    return blockId;
 }
 
 /// @brief 简单判断一个块是否需要读？这里逻辑比较简单：依据请求队列中是否需要这个块。
-bool request_need_this_block(const int& diskId, const int& unitId, const int& objectId){
-    if(objectId == 0) return false; // bug，特况，先要判断 objectId ！= 0，否则 cal_block_id 会有问题
+bool request_need_this_block(const int& diskId, const int& unitId){
+    if(disks[diskId].diskUnits[unitId] == 0) return false; // 先要判断 objectId ！= 0
 
-    const Object& object = objects[objectId];
-    const deque<Request>& requests = object.requests;
+    const int& objectId = disks[diskId].diskUnits[unitId];
+    Object& object = objects[objectId];
+    deque<Request>& requests = object.requests;
+    // 先处理掉超时请求
+    for (auto it = requests.begin(); it != requests.end(); ){                
+        Request& request = *it;
+        // 每次读取块时检查,超时的请求直接扔了丢入超时队列，也无需上报了（或许可以减轻 requests 队列，帮助 need_read 判断）
+        if(TIMESTAMP - request.arriveTime > EXTRA_TIME){
+            it++;
+            requests.pop_front();
+            objects[objectId].timeoutRequests.push(request);
+            // 更新请求趋势图
+            const int& tagId = objects[objectId].tagId;
+            tagIdRequestNum[tagId]--;
+        }else it++;
+    }
+    // 判断是否有未超时的请求需要该块
     for (auto it = requests.crbegin(); it != requests.crend(); it++){   // 我用成 [crend(), crbegin())了...用反了
         const Request& request = *it;
         const auto& hasRead = request.hasRead;
-        int blockId = cal_block_id(diskId, unitId, objectId);
+        int blockId = cal_block_id(diskId, unitId);
 
         if (hasRead[blockId] == false) return true; // for 内部只执行一次，因为只需访问最后一个 request 即可得出答案。队列不可遍历或随机访问我改成了双端队列
         else return false;
@@ -587,7 +613,7 @@ void dfs(int& minCost, string& minCostActions, int cost, string actions, char pr
     int nextUnitId = (_unitId % V) + 1;
     int nextObjectId = disks[_diskId].diskUnits[nextUnitId];
     int thisCost = (preAction != 'r' || TIMESTAMP == 1) ? 64 : std::max(16, static_cast<int>(std::ceil(preCost * 0.8))); // 计算 r 的 cost
-    if(request_need_this_block(_diskId, _unitId, _objectId)){
+    if(request_need_this_block(_diskId, _unitId)){
         // 只能选 r
         dfs(minCost, minCostActions, cost + thisCost, actions + "r", 'r', thisCost, depth + 1, setDepth, _diskId, nextUnitId, nextObjectId);
     }else{
@@ -600,17 +626,17 @@ void dfs(int& minCost, string& minCostActions, int cost, string actions, char pr
 /// @brief 某一个块可能并不需要，但是为了保持连续阅读，有时也需要 read
 bool determine_read(const int& _diskId, const int& _unitId, const int& _objectId){
     static std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
-    if(TIMESTAMP < 10000) return request_need_this_block(_diskId, _unitId, _objectId);
-    if(request_need_this_block(_diskId, _unitId, _objectId)) return true;
+
+    if(TIMESTAMP < 10000) return request_need_this_block(_diskId, _unitId);
+    if(request_need_this_block(_diskId, _unitId)) return true;
 
     const Disk& disk = disks[_diskId];
     const DiskPoint& diskPoint = disk.diskPoint;
     if(diskPoint.preAction != 'r') return false;
-    if(diskPoint.preCostToken == 64) return false;
+    if(!USE_DFS && diskPoint.preCostToken == 64) return false;
     
     std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
-    auto duration = end - begin;
-    int durationSeconds = std::chrono::duration_cast<std::chrono::seconds>(duration).count();
+    int durationSeconds = std::chrono::duration_cast<std::chrono::seconds>(end - begin).count();
     if(USE_DFS && durationSeconds <= 3600){ // 255s 前用 DFS，时间不够了留 40s 够了能跑完
         // if(TIMESTAMP >= 10001 && TIMESTAMP < 20000){
         //     // 使用 DFS 判断是否需要读
@@ -662,18 +688,22 @@ bool determine_read(const int& _diskId, const int& _unitId, const int& _objectId
         string minCostActions = "";
         int setDepth = DFS_DEPTH;
         dfs(minCost, minCostActions, 0, "", diskPoint.preAction, diskPoint.preCostToken, 1, setDepth, _diskId, _unitId, disks[_diskId].diskUnits[_unitId]);
-        assert(minCostActions.size() == DFS_DEPTH-1);            // dfs生效
+        // assert(minCostActions.size() == DFS_DEPTH - 1);       // dfs生效
 
-        if(minCostActions[0] == 'p') return false;
-        else if(minCostActions[0] == 'r') return true;
-        else assert(false);
+        // if(minCostActions[0] == 'p') return false;            // 倾向于读, 这里条件太严苛, 导致 dfs 效果不明显
+        // else if(minCostActions[0] == 'r') return true;
+        // else assert(false);
+        for (int i = 0; i < minCostActions.size(); ++i){
+            if(minCostActions[i] == 'r') return true;
+        }
+        return false;
     }else{
         /// TODO: 待优化。后 N 块只要有 1 块需要读，我就继续读
         int unitId = _unitId;
         for (int i = 0; i < CONTINUE_READ_BLOCK_NUM; ++i) { /// TODO: 调参！！！
             unitId = unitId % V + 1;
             const int objectId = disk.diskUnits[unitId];
-            if (request_need_this_block(_diskId, unitId, objectId)) return true; // cal_block_id 中的 3 个参数必须匹配
+            if (request_need_this_block(_diskId, unitId)) return true; // cal_block_id 中的 3 个参数必须匹配
         }
         return false;
     }
@@ -708,7 +738,7 @@ void read_action(){
         tagIdRequestNum[tagId]++;
     }
     // 开始读取
-    update_disk_point();
+    reset_disk_point();
     update_hot_tags_and_disk_point_position();
     vector<int> finishRequests;
     for(int i = 1; i < disks.size(); ++i){ // 每个磁头，串行开始读取
@@ -729,28 +759,16 @@ void read_action(){
 
             bool preCheck = true;
             // 遍历 requests 累积上报：每读一个块，就把 requests 队列中的 request 的所有相应位置置 true
-            int blockId = cal_block_id(i, unitId, objectId); // unitId 不可换为 diskPoint.position！注意，读之后磁头后移了，找了一下午 bug！！！
+            int blockId = cal_block_id(i, unitId); // unitId 不可换为 diskPoint.position！注意，读之后磁头后移了，找了一下午 bug！！！
             auto& requests = objects[objectId].requests;
             for (auto it = requests.begin(); it != requests.end(); ){                
                 Request& request = *it;
-                // 每次读取块时检查,超时的请求直接扔了丢入超时队列，也无需上报了（或许可以减轻 requests 队列，帮助 need_read 判断）
-                if(TIMESTAMP - request.arriveTime > EXTRA_TIME){
-                    it++;
-                    requests.pop_front();
-                    objects[objectId].timeoutRequests.push(request);
-                    // 更新请求趋势图
-                    const int& tagId = objects[objectId].tagId;
-                    tagIdRequestNum[tagId]--;
-                    continue;
-                }
-
                 request.hasRead[blockId] = true;
                 if(preCheck && check_request_is_done(request)){ // 如果某一次检查没过，其实就不必检查了，使用 preCheck 记录
                     finishRequests.push_back(request.id);
                     it++; // 防在 pop_front() 前面，以防不测...或者使用 erase()
                     requests.pop_front();
-
-                    // 每走一个请求，更新请求趋势图
+                    // 每上报一个请求，更新请求趋势图
                     const int& tagId = objects[objectId].tagId;
                     tagIdRequestNum[tagId]--;
                 }else{
