@@ -88,7 +88,7 @@ void do_partition(){
 
         if(i == M) tags[i].endUnit = V + 1; // 避免浮点数导致分区越界；同时也避免尾部少量空间未被利用
     }
-    /// NOTE: 石山代码，懒得改了，直接加。维护 tag 对象的 space、maxSpace 属性
+    /// NOTE: 石山代码，懒得改了，直接加。维护 tag 对象的 space、maxSpace 属性。暂未使用
     for (int i = 1; i < tags.size(); ++i){
         for (int j = 1; j < tags[i].freDel.size(); ++j) {
             tags[i].space += tags[i].freWrite[j];
@@ -432,7 +432,7 @@ bool do_read(const int& diskId){
     return true;
 }
 
-// 计算磁盘一个位置的价值（等同于对象存储块的价值）暂时未用
+/// 计算磁盘一个位置的价值（等同于对象存储块的价值）NOTE: 暂时未用
 int cal_block_id(const int& diskId, const int& unitId);
 double compute_block_value(const int& diskId, const int& unitId) {
     double val = 0.0;
@@ -457,7 +457,7 @@ double compute_block_value(const int& diskId, const int& unitId) {
     return val;
 }
 
-// 计算指定磁盘上指定区间的读取价值
+/// 计算指定磁盘上指定区间的读取价值. NOTE: 暂时未用
 double compute_range_value(int diskId, const pair<int, int>& initRange) {
     double rangeValue = 0.0;
     const int leftRange = initRange.first;  // 左边界
@@ -474,26 +474,15 @@ double compute_range_value(int diskId, const pair<int, int>& initRange) {
 void update_hot_tags_and_disk_point_position(){ 
     if (TIMESTAMP % GAP != 0) return;
 
-    static vector<pair<int, pair<int, int>>> hotTags(M + 1);   // pair<int, int>: {tagId, requestNum}
+    static vector<pair<int, int>> hotTags(M + 1);   // pair<int, int>: {tagId, requestNum}
     // 更新 hotTags（进行排序）
     // 计算 tagId 为 i 的区间价值和请求数量（利用这二者进行排序）
     for (int i = 1; i < hotTags.size(); ++i){
-        const Tag& tag = tagIdToTagsIndex[i];
-        const pair<int, int> range = { tag.startUnit, tag.endUnit };
-        double totalRangeVal = 0.0;
-        for(int i = 1; i < disks.size(); ++i){
-            totalRangeVal += compute_range_value(i, range);
-        }
-        hotTags[i] = { i, {tagIdRequestNum[i], totalRangeVal}};
+        hotTags[i] = { i,tagIdRequestNum[i]};
     }
     /// TODO: 综合 freRead / space
-    std::sort(hotTags.begin(), hotTags.end(), [](const pair<int, pair<int, int>>& x, const pair<int, pair<int, int>>& y) {
-        const int& spaceX = tags[tagIdToTagsIndex[x.first]].space;
-        const int& spaceY = tags[tagIdToTagsIndex[y.first]].space;
-        const auto& a = x.second;
-        const auto& b = y.second;
-
-        return a.first > b.first;
+    std::sort(hotTags.begin(), hotTags.end(), [](const pair<int, int>& x, const pair<int, int>& y) {
+        return x.second > y.second;
     });
     // 每一个磁头移动到相应 hotTag 的区间起始位置
 

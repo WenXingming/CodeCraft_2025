@@ -101,8 +101,8 @@ struct Tag{
         this->endUnit = _endUnit;
         this->updateNum = _updateNum;
 
-        this->space = _space;
-        this->maxSpace = _maxSpace;
+        this->space = _space;       // 暂未使用
+        this->maxSpace = _maxSpace; // 暂未使用
 
         this->freDel.assign((T - 1) / FRE_PER_SLICING + 2, 0);
         this->freWrite.assign((T - 1) / FRE_PER_SLICING + 2, 0);
