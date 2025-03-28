@@ -467,6 +467,7 @@ void update_hot_tags_and_disk_point_position(){
         
         // int hotTagsIndex = hotTagIds[i];
         // int tagId = hotTags[hotTagsIndex].first;
+        /// NOTE: 3 + 3 + 3 + 1 > 3 + 3 + 2 + 2
         int tagId = hotTagStartIndex < hotTags.size() ? hotTags[hotTagStartIndex].first : hotTags[hotTags.size()-1].first;
         hotTagStartIndex = hotTagStartIndex % hotTagNum + 1;
         if(i == disks.size()-1) tagId = hotTagNum+1 < hotTags.size() ? hotTags[hotTagNum+1].first : hotTags[hotTags.size()-1].first;
