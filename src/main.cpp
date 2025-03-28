@@ -456,16 +456,19 @@ void update_hot_tags_and_disk_point_position(){
     });
     // 每一个磁头移动到相应 hotTag 的区间起始位置
 
-    /// TODO: 调参. hotTag 数量待定。4 个 hotTag：2+2 or 3+1
+    // // 写死，使用 5 个 hotTag: 3 + 3 + 2 + 1
+    // vector<int> hotTagIds = { 0, 1, 2, 3, 4, 5, 1, 2, 3, 1, 2};
+    /// TODO: 调参; NOTE: 经测试，使用 4 个 hotTag 最高: 3 + 3 + 3 + 1 > 3 + 3 + 2 + 2
     const int hotTagNum = 3;
     int hotTagStartIndex = rand() % hotTagNum + 1; // 索引 [1, hotTagNum]
     for (int i = 1; i < disks.size(); ++i){
         /// WARNING: 每个磁盘头都移动到一个 tag 的 startUnit，最小的数据集上，3 个磁盘只有 2 个 tag，不够分，所以报错！跑不了小数据集
         /// SOLVE: 避免 hotTag 的数量少于 磁盘数量 造成越界访问
         
+        // int hotTagsIndex = hotTagIds[i];
+        // int tagId = hotTags[hotTagsIndex].first;
         int tagId = hotTagStartIndex < hotTags.size() ? hotTags[hotTagStartIndex].first : hotTags[hotTags.size()-1].first;
         hotTagStartIndex = hotTagStartIndex % hotTagNum + 1;
-        
         if(i == disks.size()-1) tagId = hotTagNum+1 < hotTags.size() ? hotTags[hotTagNum+1].first : hotTags[hotTags.size()-1].first;
 
         const int& tagsIndex = tagIdToTagsIndex[tagId];
