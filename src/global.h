@@ -84,16 +84,19 @@ struct Tag{
     int startUnit;          // 此 id 标签的对象在磁盘分区（主分区）上的起始位置, [1, V]
     int endUnit;            // 此 id 标签的对象在磁盘分区（主分区）上的终止位置
 
+    int updateNum;
+
     vector<int> freDel;     // NOTE: 下标从 1 开始
     vector<int> freWrite;
     vector<int> freRead;
     // 非必要不提供默认构造函数。可以使用【默认参数】
-    Tag(int _writeMainDiskId = 1, int _writeRandomDiskId = 1, int _startUnit = 1, int _endUnit = 1) {
+    Tag(int _writeMainDiskId = 1, int _writeRandomDiskId = 1, int _startUnit = 1, int _endUnit = 1, int _updateNum = 0) {
         // id 待留运行时初始化
         this->writeMainDiskId = _writeMainDiskId;
         this->writeRandomDiskId = _writeRandomDiskId;
         this->startUnit = _startUnit;
         this->endUnit = _endUnit;
+        this->updateNum = _updateNum;
 
         this->freDel.assign((T - 1) / FRE_PER_SLICING + 2, 0);
         this->freWrite.assign((T - 1) / FRE_PER_SLICING + 2, 0);
@@ -104,12 +107,26 @@ struct Tag{
     int update_main_disk_id(){
         int tmp = writeMainDiskId;
         writeMainDiskId = writeMainDiskId % N + 1;
+
+        // 将相邻时刻到达的同标签对象尽可能写入同样的三个磁盘（便于串行读取）
+        /// TODO: 调参
+        if (updateNum != -1) {
+            ++updateNum;
+            if ((updateNum % 3 == 0) && (updateNum % 45*3 != 0)) { // 相邻的 45 个对象写入同一个磁盘, 每个对象 3 个副本
+                writeMainDiskId = (writeMainDiskId - 3 + N) % N;
+                if (!writeMainDiskId) writeMainDiskId = N;
+            }
+        }
+
         return tmp;
     }
     // 随机写入的磁盘进行轮转
     int update_random_disk_id(){
         int tmp = writeRandomDiskId;
         writeRandomDiskId = writeRandomDiskId % N + 1;
+
+        // updateNum = -1; // 当发生了该标签的主分区写不下（此时大概 2w 个时间片 +），就不再使用 updateNum 策略，即将相邻时刻到达的同标签对象尽可能写入同样的三个磁盘
+
         return tmp;
     }
 };

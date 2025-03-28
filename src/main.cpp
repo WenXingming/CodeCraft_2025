@@ -1,8 +1,8 @@
 #include "global.h"
 
-const bool USE_LEFT_SHIFT = true;   // 使用逆序写
+const bool USE_LEFT_SHIFT = false;   // 使用逆序写
 const bool USE_DFS = false;
-const int DFS_DEPTH = 12;           // [1, DFS_DEPTH)
+const int DFS_DEPTH = 17;           // [1, DFS_DEPTH)
 
 /// NOTE: CONTINUE_READ_BLOCK_NUM = 8 的前提下:
 /// NOTE: GAP = 20,  632w; GAP = 30,  746w; GAP = 40,  821w; GAP = 50,  844w; GAP = 60,  863w; GAP = 70,  872w;
@@ -12,7 +12,7 @@ const int DFS_DEPTH = 12;           // [1, DFS_DEPTH)
 /// NOTE: GAP = 65, 8725497.7975; GAP = 75, 8723257.4625; GAP = 85, 8689049.0050; GAP = 95, 8718773.2575;
 /// NOTE: GAP = 66, 8714820.0900; GAP = 67, 8730971.0375; GAP = 68, 8730653.1375; GAP = 69, 8696208.7550;
 /// NOTE: GAP = 71, 8700299.4800; GAP = 72, 8700659.7750; GAP = 73, 8698820.2275; 
-const int GAP = 67;
+const int GAP = 70;
 
 // 下面是初始化操作
 // =============================================================================================
