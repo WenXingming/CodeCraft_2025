@@ -89,14 +89,20 @@ struct Tag{
     vector<int> freDel;     // NOTE: 下标从 1 开始
     vector<int> freWrite;
     vector<int> freRead;
+
+    int space;
+    int maxSpace;
     // 非必要不提供默认构造函数。可以使用【默认参数】
-    Tag(int _writeMainDiskId = 1, int _writeRandomDiskId = 1, int _startUnit = 1, int _endUnit = 1, int _updateNum = 0) {
+    Tag(int _writeMainDiskId = 1, int _writeRandomDiskId = 1, int _startUnit = 1, int _endUnit = 1, int _updateNum = 0, int _space = 0, int _maxSpace = 0) {
         // id 待留运行时初始化
         this->writeMainDiskId = _writeMainDiskId;
         this->writeRandomDiskId = _writeRandomDiskId;
         this->startUnit = _startUnit;
         this->endUnit = _endUnit;
         this->updateNum = _updateNum;
+
+        this->space = _space;
+        this->maxSpace = _maxSpace;
 
         this->freDel.assign((T - 1) / FRE_PER_SLICING + 2, 0);
         this->freWrite.assign((T - 1) / FRE_PER_SLICING + 2, 0);
@@ -125,7 +131,7 @@ struct Tag{
         int tmp = writeRandomDiskId;
         writeRandomDiskId = writeRandomDiskId % N + 1;
 
-        // updateNum = -1; // 当发生了该标签的主分区写不下（此时大概 2w 个时间片 +），就不再使用 updateNum 策略，即将相邻时刻到达的同标签对象尽可能写入同样的三个磁盘
+        updateNum = -1; // 当发生了该标签的主分区写不下（此时大概 2w 个时间片 +），该标签就不再使用 updateNum 策略，即将相邻时刻到达的同标签对象尽可能写入同样的三个磁盘
 
         return tmp;
     }

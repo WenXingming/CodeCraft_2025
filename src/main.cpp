@@ -78,7 +78,6 @@ void do_partition(){
     }
     int totalSpace = std::accumulate(tagSpaces.begin(), tagSpaces.end(), 0);
     int totalMaxSpace = std::accumulate(maxTagSpaces.begin(), maxTagSpaces.end(), 0);
-
     // 根据每个标签的百分比，计算应该在磁盘上分配的容量，并计算得到每个标签的区间。NOTE: 10% free 分区剩余（已取消）。
     vector<int> allocSpaces(tags.size());
     for (int i = 1; i < tags.size(); ++i){
@@ -88,6 +87,14 @@ void do_partition(){
         tags[i].endUnit = tags[i].startUnit + allocSpaces[i];
 
         if(i == M) tags[i].endUnit = V + 1; // 避免浮点数导致分区越界；同时也避免尾部少量空间未被利用
+    }
+    /// NOTE: 石山代码，懒得改了，直接加。维护 tag 对象的 space、maxSpace 属性
+    for (int i = 1; i < tags.size(); ++i){
+        for (int j = 1; j < tags[i].freDel.size(); ++j) {
+            tags[i].space += tags[i].freWrite[j];
+            tags[i].maxSpace = std::max(tags[i].maxSpace, tags[i].space);
+            tags[i].space -= tags[i].freDel[j];
+        }
     }
 }
 
@@ -349,7 +356,7 @@ void write_action(){
 // =============================================================================================
 
 /// @brief 每个时间片初始化所有磁头令牌为 G、还有命令
-void reset_disk_point(){
+void update_disk_point(){
     for(int i = 1; i < disks.size(); ++i){
         disks[i].diskPoint.remainToken = G;
         disks[i].diskPoint.cmd = "";
@@ -425,28 +432,68 @@ bool do_read(const int& diskId){
     return true;
 }
 
+// 计算磁盘一个位置的价值（等同于对象存储块的价值）暂时未用
+int cal_block_id(const int& diskId, const int& unitId);
+double compute_block_value(const int& diskId, const int& unitId) {
+    double val = 0.0;
+
+    if(disks[diskId].diskUnits[unitId] == 0) return val; // 空块，磁盘该位置未存储对象
+
+    const int& objectId = disks[diskId].diskUnits[unitId];
+    const Object& object = objects[objectId];
+    const deque<Request>& requests = object.requests;
+    for (const Request& request : requests) {  // 遍历所有有该块的请求，计算该块价值
+        int blockId = cal_block_id(diskId, unitId);
+        if(request.hasRead[blockId]) continue;
+
+        int duration = TIMESTAMP - request.arriveTime;
+        if (duration >= 0 && duration <= 10) {
+            val += (-0.005 * duration + 1.0);
+        } else if (duration > 10 && duration <= 105) {
+            val += (-0.01 * duration + 1.05);
+        }else{ continue; }
+    }
+
+    return val;
+}
+
+// 计算指定磁盘上指定区间的读取价值
+double compute_range_value(int diskId, const pair<int, int>& initRange) {
+    double rangeValue = 0.0;
+    const int leftRange = initRange.first;  // 左边界
+    const int rightRange = initRange.second;  // 右边界
+    for (int i = leftRange; i < rightRange; i ++ ) {
+        rangeValue += compute_block_value(diskId, i);
+    }
+    return rangeValue;
+} 
+
 /// @brief 每隔 GAP 根据 tag 的请求趋势图【等信息】尝试更新（重置）所有磁头的起始 read 位置
 /// NOTE: GAP 是需要调参的，确保这个间隔可以遍历完一个区间
 /// TODO: 设置 3 个或多个 hotTag；并移动磁头到相应位置。经测试，设置 N 个得分最高！不是 N 个最高，而是 N / 2 个时，我应该把磁头分散开来，而不是相邻磁头指向同一个区间，而是隔 N / 2个磁盘的磁头指向同一个区间。所以是因为我的实施不好
 void update_hot_tags_and_disk_point_position(){ 
     if (TIMESTAMP % GAP != 0) return;
 
-    static vector<pair<int, int>> hotTags(M + 1);   // pair<int, int>: {tagId, requestNum}
-    // 更新 hotTags
+    static vector<pair<int, pair<int, int>>> hotTags(M + 1);   // pair<int, int>: {tagId, requestNum}
+    // 更新 hotTags（进行排序）
+    // 计算 tagId 为 i 的区间价值和请求数量（利用这二者进行排序）
     for (int i = 1; i < hotTags.size(); ++i){
-        hotTags[i] = { i, tagIdRequestNum[i] };
+        const Tag& tag = tagIdToTagsIndex[i];
+        const pair<int, int> range = { tag.startUnit, tag.endUnit };
+        double totalRangeVal = 0.0;
+        for(int i = 1; i < disks.size(); ++i){
+            totalRangeVal += compute_range_value(i, range);
+        }
+        hotTags[i] = { i, {tagIdRequestNum[i], totalRangeVal}};
     }
     /// TODO: 综合 freRead / space
-    std::sort(hotTags.begin(), hotTags.end(), [](const pair<int, int>& x, const pair<int, int>& y) {
-        // 计算至今的 space
-        // int tagsIndex1 = tagIdToTagsIndex[x.first], tagsIndex2 = tagIdToTagsIndex[y.first];
-        // Tag& tag1 = tags[tagsIndex1];
-        // Tag& tag2 = tags[tagsIndex2];
-        // for(int i = 1; i <= (TIMESTAMP - 1) / FRE_PER_SLICING + 1 /* && i < tag1.freRead.size() */; ++i){
+    std::sort(hotTags.begin(), hotTags.end(), [](const pair<int, pair<int, int>>& x, const pair<int, pair<int, int>>& y) {
+        const int& spaceX = tags[tagIdToTagsIndex[x.first]].space;
+        const int& spaceY = tags[tagIdToTagsIndex[y.first]].space;
+        const auto& a = x.second;
+        const auto& b = y.second;
 
-        // }
-        
-        return x.second > y.second;
+        return a.first > b.first;
     });
     // 每一个磁头移动到相应 hotTag 的区间起始位置
 
@@ -566,30 +613,6 @@ bool request_need_this_block(const int& diskId, const int& unitId){
     return false;
 }   
 
-// 计算磁盘一个位置的价值（等同于对象存储块的价值）暂时未用
-double compute_block_value(const int& diskId, const int& unitId) {
-    double val = 0.0;
-
-    if(disks[diskId].diskUnits[unitId] == 0) return val; // 空块，磁盘该位置未存储对象
-
-    const int& objectId = disks[diskId].diskUnits[unitId];
-    const Object& object = objects[objectId];
-    const deque<Request>& requests = object.requests;
-    for (const Request& request : requests) {  // 遍历所有有该块的请求，计算该块价值
-        int blockId = cal_block_id(diskId, unitId);
-        if(request.hasRead[blockId]) continue;
-
-        int duration = TIMESTAMP - request.arriveTime;
-        if (duration >= 0 && duration <= 10) {
-            val += (-0.005 * duration + 1.0);
-        } else if (duration > 10 && duration <= 105) {
-            val += (-0.01 * duration + 1.05);
-        }else{ continue; }
-    }
-
-    return val;
-}
-
 /// @brief 遍历一棵高度为 DFS_DEPTH 的树，找到后 DFS_DEPTH 步里面令牌消耗最少的走法（只含p、r，如：prrprppprr）
 /// @attention 若该单元格 request_need_this_block 则必须走 r
 void dfs(int& minCost, string& minCostActions, int cost, string actions, char preAction, int preCost, int depth, const int& setDepth,const int& _diskId, int _unitId){
@@ -684,7 +707,7 @@ void read_action(){
         tagIdRequestNum[tagId]++;
     }
     // 开始读取
-    reset_disk_point();
+    update_disk_point();
     update_hot_tags_and_disk_point_position();
     vector<int> finishRequests;
     for(int i = 1; i < disks.size(); ++i){ // 每个磁头，串行开始读取
