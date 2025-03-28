@@ -1,14 +1,8 @@
 #include "global.h"
 
-const bool USE_LEFT_SHIFT = false;   // 使用逆序写
+const bool USE_LEFT_SHIFT = true;   // 使用逆序写
 const bool USE_DFS = false;
-const int DFS_DEPTH = 17;           // [1, DFS_DEPTH)
-
-/// NOTE: 本地 868， 云端 2577
-
-/// NOTE: 1, 775w; 2, 805w; 3, 831w; 4, 855w; 5, 862w; 6, 866w; 7, 864w; 8, 873w; 9, 870w; 10, 870w; 11, 868w; 12, 865w; 13, 865w; 14, 864w
-const int NEXT_BLOCK_NUM = 8;  // USE_DFS 为 false 时生效。保证连续阅读的调参，后续 CONTINUE_READ_BLOCK_NUM USE_DFS 中只要有一个块要读，就继续读
-const double NEED_READ_BLOCK_RATE = 0.125;
+const int DFS_DEPTH = 12;           // [1, DFS_DEPTH)
 
 /// NOTE: CONTINUE_READ_BLOCK_NUM = 8 的前提下:
 /// NOTE: GAP = 20,  632w; GAP = 30,  746w; GAP = 40,  821w; GAP = 50,  844w; GAP = 60,  863w; GAP = 70,  872w;
@@ -475,7 +469,6 @@ void update_hot_tags_and_disk_point_position(){
         const int& tagsIndex = tagIdToTagsIndex[tagId];
         const Tag& tag = tags[tagsIndex];
         const int& startUnit = tag.startUnit;
-
         // 对于每一个磁头，计算消耗，判断是用 j or p
         Disk& disk = disks[i];
         DiskPoint& diskPoint = disk.diskPoint;
@@ -573,11 +566,35 @@ bool request_need_this_block(const int& diskId, const int& unitId){
     return false;
 }   
 
+// 计算磁盘一个位置的价值（等同于对象存储块的价值）暂时未用
+double compute_block_value(const int& diskId, const int& unitId) {
+    double val = 0.0;
+
+    if(disks[diskId].diskUnits[unitId] == 0) return val; // 空块，磁盘该位置未存储对象
+
+    const int& objectId = disks[diskId].diskUnits[unitId];
+    const Object& object = objects[objectId];
+    const deque<Request>& requests = object.requests;
+    for (const Request& request : requests) {  // 遍历所有有该块的请求，计算该块价值
+        int blockId = cal_block_id(diskId, unitId);
+        if(request.hasRead[blockId]) continue;
+
+        int duration = TIMESTAMP - request.arriveTime;
+        if (duration >= 0 && duration <= 10) {
+            val += (-0.005 * duration + 1.0);
+        } else if (duration > 10 && duration <= 105) {
+            val += (-0.01 * duration + 1.05);
+        }else{ continue; }
+    }
+
+    return val;
+}
+
 /// @brief 遍历一棵高度为 DFS_DEPTH 的树，找到后 DFS_DEPTH 步里面令牌消耗最少的走法（只含p、r，如：prrprppprr）
 /// @attention 若该单元格 request_need_this_block 则必须走 r
 void dfs(int& minCost, string& minCostActions, int cost, string actions, char preAction, int preCost, int depth, const int& setDepth,const int& _diskId, int _unitId){
     // 控制递归树高度，同时处理叶子节点
-    if(depth == DFS_DEPTH){
+    if(depth == setDepth){
         if(cost < minCost){ // 处理叶子节点
             minCost = cost;
             minCostActions = actions;
@@ -628,13 +645,11 @@ bool determine_read(const int& _diskId, const int& _unitId, const int& _objectId
         // }
         return false;
     }else{
-        /// TODO: 待优化。后 N 块只要有 1 块需要读，我就继续读。优化为后 N 块只要有 k 块需要读，我就继续读
-        int k = 0;
+        /// TODO: 调参。后 N 块只要有 1 块需要读，我就继续读。设想优化为后 N 块只要有 k 块需要读，我就继续读（可以设置一个比例，试了没太大用）
         int unitId = _unitId;
-        for (int i = 0; i < NEXT_BLOCK_NUM; ++i) { /// TODO: 调参！！！
+        for (int i = 0; i < 8; ++i) {
             unitId = unitId % V + 1;
-            if (request_need_this_block(_diskId, unitId)) k++;
-            if(k == static_cast<int>(NEXT_BLOCK_NUM * NEED_READ_BLOCK_RATE)) return true;
+            if (request_need_this_block(_diskId, unitId)) return true;
         }
         return false;
     }
