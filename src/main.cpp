@@ -2,15 +2,22 @@
 
 const bool USE_LEFT_SHIFT = false;   // 使用逆序写
 const bool USE_DFS = false;
-const int DFS_DEPTH = 17;               // [1, DFS_DEPTH)
-const int CONTINUE_READ_BLOCK_NUM = 10; // 保证连续阅读的调参，后续 CONTINUE_READ_BLOCK_NUM USE_DFS 中只要有一个块要读，就继续读。USE_DFS 为 false 时生效
+const int DFS_DEPTH = 17;            // [1, DFS_DEPTH)
 
-/// TODO: 调参
-/// NOTE: CONTINUE_READ_BLOCK_NUM = 10 的前提下:
-/// NOTE: GAP = 20, 680w; GAP = 30, 794w; GAP = 40, 883w; GAP = 50, 925w; GAP = 60, 927w; GAP = 70, 935w;
-/// NOTE: GAP = 80, 934w; GAP = 90, 930w; GAP = 100, 931w; GAP = 110, 927w; GAP = 120, 918w; GAP = 130, 906w; GAP = 140, 895w;
-/// NOTE: GAP = 150, 898w; GAP = 160, 906w; GAP = 170, 917w; GAP = 180, 918w; GAP = 190, 916w
-const int GAP = 73;
+/// NOTE: 本地 868， 云端 2577
+
+/// NOTE: 1, 775w; 2, 805w; 3, 831w; 4, 855w; 5, 862w; 6, 866w; 7, 864w; 8, 873w; 9, 870w; 10, 870w; 11, 868w; 12, 865w; 13, 865w; 14, 864w
+const int CONTINUE_READ_BLOCK_NUM = 8;  // USE_DFS 为 false 时生效。保证连续阅读的调参，后续 CONTINUE_READ_BLOCK_NUM USE_DFS 中只要有一个块要读，就继续读
+
+/// NOTE: CONTINUE_READ_BLOCK_NUM = 8 的前提下:
+/// NOTE: GAP = 20,  632w; GAP = 30,  746w; GAP = 40,  821w; GAP = 50,  844w; GAP = 60,  863w; GAP = 70,  872w;
+/// NOTE: GAP = 80,  871w; GAP = 90,  871w; GAP = 100, 861w; GAP = 110, 855w; GAP = 120, 852w; GAP = 130, 854w;
+/// NOTE: GAP = 140, 857w; GAP = 150, 858w; GAP = 160, 848w; GAP = 170, 844w; GAP = 180, 838w; GAP = 190, 838w
+/// NOTE: 波峰在 60 ~ 100, 可能有多峰
+/// NOTE: GAP = 65, 8725497.7975; GAP = 75, 8723257.4625; GAP = 85, 8689049.0050; GAP = 95, 8718773.2575;
+/// NOTE: GAP = 66, 8714820.0900; GAP = 67, 8730971.0375; GAP = 68, 8730653.1375; GAP = 69, 8696208.7550;
+/// NOTE: GAP = 71, 8700299.4800; GAP = 72, 8700659.7750; GAP = 73, 8698820.2275; 
+const int GAP = 67;
 
 // 下面是初始化操作
 // =============================================================================================
@@ -67,7 +74,7 @@ void sort_tags(){
     }
 }
 
-/// @brief 计算每个分区的 startUnit、endUnit。NOTE: 可以按「峰值容量」or「实际容量」进行分区; 经测试「峰值容量」磁盘碎片更少
+/// @brief 计算每个分区的 startUnit、endUnit。NOTE: 可以按「峰值容量」or「实际容量」进行分区; 经测试「峰值容量」磁盘碎片更少，分数更高
 void do_partition(){
     vector<int> tagSpaces(tags.size());
     vector<int> maxSpaces(tags.size(), 0);
@@ -79,13 +86,14 @@ void do_partition(){
         }
     }
     // 计算每个标签的实际、峰值容量之和
-    // int totalSpace = std::accumulate(tagSpaces.begin(), tagSpaces.end(), 0);
+    int totalSpace = std::accumulate(tagSpaces.begin(), tagSpaces.end(), 0);
     int totalMaxSpace = std::accumulate(maxSpaces.begin(), maxSpaces.end(), 0);
 
     // 根据每个标签的百分比，计算应该在磁盘上分配的容量，并计算得到每个标签的区间。NOTE: 10% free 分区剩余（已取消）。
     vector<int> allocSpaces(tags.size());
     for (int i = 1; i < tags.size(); ++i){
-        allocSpaces[i] = V * (static_cast<double>(maxSpaces[i]) / totalMaxSpace);
+        /// NOTE: 可选按「峰值容量」or「实际容量」进行分区
+        allocSpaces[i] = V * (static_cast<double>(maxSpaces[i]) / totalMaxSpace); 
         tags[i].startUnit = tags[i - 1].endUnit;
         tags[i].endUnit = tags[i].startUnit + allocSpaces[i];
 
@@ -437,6 +445,14 @@ void update_hot_tags_and_disk_point_position(){
     }
     /// TODO: 综合 freRead / space
     std::sort(hotTags.begin(), hotTags.end(), [](const pair<int, int>& x, const pair<int, int>& y) {
+        // 计算至今的 space
+        int tagsIndex1 = tagIdToTagsIndex[x.first], tagsIndex2 = tagIdToTagsIndex[y.first];
+        Tag& tag1 = tags[tagsIndex1];
+        Tag& tag2 = tags[tagsIndex2];
+        for(int i = 1; i <= (TIMESTAMP - 1) / FRE_PER_SLICING + 1 /* && i < tag1.freRead.size() */; ++i){
+            
+        }
+        
         return x.second > y.second;
     });
     // 每一个磁头移动到相应 hotTag 的区间起始位置
