@@ -1,7 +1,7 @@
 #include "global.h"
 
 const bool USE_LEFT_SHIFT = false;   // 使用逆序写
-const bool USE_DFS = false;
+const bool USE_DFS = true;
 const int DFS_DEPTH = 17;           // [1, DFS_DEPTH)
 
 /// NOTE: 45, 930w; 47, 930w; 50, 930w; 52, 929w; 55, 925w; 60, 920w; 65, 915w;
@@ -561,7 +561,7 @@ void sync_update_disk_point_position(){
     for (int i = 1; i < hotTags.size(); ++i){
         hotTags[i] = { i,tagIdRequestNum[i]};
     }
-    std::sort(hotTags.begin(), hotTags.end(), [](const pair<int, int>& x, const pair<int, int>& y) {
+    std::sort(hotTags.begin() + 1, hotTags.end(), [](const pair<int, int>& x, const pair<int, int>& y) {
 #if 1 
         return x.second > y.second;
 #elif false
@@ -586,7 +586,7 @@ void sync_update_disk_point_position(){
     // vector<int> hotTagIds = { 0, 1, 2, 3, 4, 5, 1, 2, 3, 1, 2}; // 写死，使用 5 个 hotTag: 3 + 3 + 2 + 1 + 1
     /// TODO: 调参; NOTE: 经测试，使用 4 个 hotTag 最高: 3 + 3 + 3 + 1 > 3 + 3 + 2 + 2
     const int hotTagNum = 3;
-    int hotTagStartIndex = /* rand() % hotTagNum + */ 1; // 索引 [1, hotTagNum]
+    int hotTagStartIndex = rand() % hotTagNum + 1; // 索引 [1, hotTagNum]
     for (int i = 1; i < disks.size(); ++i){
         /// WARNING: 每个磁盘头都移动到一个 tag 的 startUnit，最小的数据集上，3 个磁盘只有 2 个 tag，不够分，所以报错！跑不了小数据集
         /// SOLVE: 避免 hotTag 的数量少于 磁盘数量 造成越界访问
@@ -625,7 +625,7 @@ void async_update_disk_point_position(){
     static bool isInit = false;
     if(!isInit){
         isInit = true;
-        hotTagDisks[1] = { 1, vector<int> { 1, 4, 7 }};
+        hotTagDisks[1] = { 1, vector<int> { 1, 4, 7 } };
         hotTagDisks[2] = { 1, vector<int> { 2, 5, 8 } };
         hotTagDisks[3] = { 1, vector<int> { 3, 6, 9 } };
         hotTagDisks[4] = { 1, vector<int> { 10 } };
@@ -650,11 +650,12 @@ void async_update_disk_point_position(){
         }
         if(!isCompleteTraverse) continue;
 
+        traverse_all_disks_update_requests_num();
         // 更新 hotTags（并进行排序）, 利用 tagId 为 i 的请求数量进行排序。
         for (int j = 1; j < hotTags.size(); ++j) {
             hotTags[j] = { j, tagIdRequestNum[j] };
         }
-        std::sort(hotTags.begin(), hotTags.end(), [](const pair<int, int>& x, const pair<int, int>& y) {
+        std::sort(hotTags.begin() + 1, hotTags.end(), [](const pair<int, int>& x, const pair<int, int>& y) {
             return x.second > y.second;
         });
         // 选定一个 hotTag
@@ -677,9 +678,9 @@ void async_update_disk_point_position(){
                     break;
                 }
             }
-        }else{ // 选排序第 4 的hotTag
+        } else { // 选排序第 4 的hotTag
+            int count = 0;
             for (int j = 1; j < hotTags.size(); ++j){
-                int k = 0;
                 // 判断未正在被使用
                 int tagId = hotTags[j].first;
                 bool notUse = true;
@@ -690,7 +691,7 @@ void async_update_disk_point_position(){
                         break;
                     }
                 }
-                if (notUse && ++k == 4) {
+                if (notUse && ++count == 4) {
                     selectTagId = tagId;
                     assert(selectTagId != 0);
                     break;
@@ -699,6 +700,8 @@ void async_update_disk_point_position(){
         }
         // 更新 hotTagDisks
         hotTagDisks[i].first = selectTagId;
+        // printf("TEST: ==============================\n");
+        // printf("selectTagId: %d\n", selectTagId);
         // 更新磁头
         for(int j = 0; j < useDisks.size(); ++j){
             const int& diskId = useDisks[j];
@@ -711,8 +714,12 @@ void async_update_disk_point_position(){
             int distance = ((startUnit - diskPoint.position) + V) % V; // 计算 pass 的步数。磁头只能向后 pass：startUnit - position > or < 0
             // jump
             if (distance >= diskPoint.remainToken) {
-                if (!do_jump(diskId, startUnit))
-                    assert(false);
+                int j = startUnit; // 优化，找到第一个需要读的位置跳，节约令牌
+                while(!request_need_this_block(i, j)) {
+                    j = j % V + 1;
+                    if(j == startUnit) break; // 避免死循环，设置最大尝试次数
+                }
+                if (!do_jump(diskId, startUnit)) assert(false);
                 continue;
             }
             // 非 jump 就 pass
