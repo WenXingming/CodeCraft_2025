@@ -311,7 +311,7 @@ bool write_one_object(const int& objectId){
     for (int k = 1; k <= REP_NUM; ++k){
         // 遍历所有磁盘，尝试写入主分区
         bool isWriteSucess = false;
-        for (int i = 1; i <= N; ++i) {
+        for (int i = 1; i <= N * NEAR_NUM; ++i) {
             int writeDiskId = tag.update_main_disk_id();
             if (write_to_main_partition(writeDiskId, objectId, k)) {
                 isWriteSucess = true;
@@ -562,7 +562,7 @@ void sync_update_disk_point_position(){
         hotTags[i] = { i,tagIdRequestNum[i]};
     }
     std::sort(hotTags.begin(), hotTags.end(), [](const pair<int, int>& x, const pair<int, int>& y) {
-#if true 
+#if 1 
         return x.second > y.second;
 #elif false
         const int &tagsIndex1 = tagIdToTagsIndex[x.first], tagsIndex2 = tagIdToTagsIndex[y.first];

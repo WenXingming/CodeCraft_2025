@@ -35,6 +35,8 @@ using namespace std;
 int T, M, N, V, G;
 int TIMESTAMP;
 
+const int NEAR_NUM = 45; //相邻的 45 个对象写入同一个磁盘
+
 // 结构体定义
 // ===================================================================================
 
@@ -118,7 +120,7 @@ struct Tag{
         /// TODO: 调参
         if (updateNum != -1) {
             ++updateNum;
-            if ((updateNum % 3 == 0) && (updateNum % 45*3 != 0)) { // 相邻的 45 个对象写入同一个磁盘, 每个对象 3 个副本
+            if ((updateNum % 3 == 0) && (updateNum % (NEAR_NUM*3) != 0)) { // 相邻的 45 个对象写入同一个磁盘, 每个对象 3 个副本
                 writeMainDiskId = (writeMainDiskId - 3 + N) % N;
                 if (!writeMainDiskId) writeMainDiskId = N;
             }
