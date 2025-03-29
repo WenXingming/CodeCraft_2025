@@ -1,16 +1,16 @@
 #include "global.h"
 
 const bool USE_LEFT_SHIFT = false;   // 使用逆序写
-const bool USE_DFS = true;
+const bool USE_DFS = false;
 const int DFS_DEPTH = 17;           // [1, DFS_DEPTH)
 
-/// NOTE: 45, 930w; 47, 930w; 50, 930w; 52, 929w; 55, 925w; 60, 920w; 65, 915w;
 const int GAP = 45;
+// 45, 930w; 47, 930w; 50, 930w; 52, 929w; 55, 925w; 60, 920w; 65, 915w;
 
-// 下面是初始化操作
 // =============================================================================================
+// 下面是初始化操作
 
-/// @brief 初始化全局变量（vector 分配空间）
+// 初始化全局变量（vector 分配空间）
 void init_global_container(){
     tags.assign(M + 1, Tag());              // Tag 没有默认构造函数，使用默认参数
     for(int i = 1; i < tags.size(); ++i) {
@@ -22,7 +22,7 @@ void init_global_container(){
     tagIdRequestNum.assign(M + 1, 0);
 }
 
-/// @brief init tags
+// init tags
 void pre_input_process(){
     for (int k = 0; k < 3; ++k){
         for (int i = 1; i <= M; i++) {
@@ -37,7 +37,7 @@ void pre_input_process(){
     fflush(stdout);
 }
 
-/// @brief 根据 read 总量进行排序，高的分区放在磁盘前面。因为 write_to_random_partition 从后向前
+// 根据 read 总量进行排序，高的分区放在磁盘前面。因为 write_to_random_partition 从后向前
 void sort_tags(){ 
     // 根据阅读量排序
     std::sort(tags.begin() + 1, tags.end(), [](const Tag& a, const Tag& b) {
@@ -57,7 +57,7 @@ void sort_tags(){
     }
 }
 
-/// @brief 计算每个分区的 startUnit、endUnit。NOTE: 可以按「峰值容量」or「实际容量」进行分区; 经测试「峰值容量」磁盘碎片更少，分数更高
+// 计算每个分区的 startUnit、endUnit。NOTE: 可以按「峰值容量」or「实际容量」进行分区; 经测试「峰值容量」磁盘碎片更少，分数更高
 void do_partition(){
     // 计算每个标签的实际、峰值容量
     vector<int> tagSpaces(tags.size(), 0);
@@ -81,27 +81,19 @@ void do_partition(){
 
         if(i == M) tags[i].endUnit = V + 1; // 避免浮点数导致分区越界；同时也避免尾部少量空间未被利用
     }
-    /// NOTE: 石山代码，懒得改了，直接加。维护 tag 对象的 space、maxSpace 属性。暂未使用
-    for (int i = 1; i < tags.size(); ++i){
-        for (int j = 1; j < tags[i].freDel.size(); ++j) {
-            tags[i].space += tags[i].freWrite[j];
-            tags[i].maxSpace = std::max(tags[i].maxSpace, tags[i].space);
-            tags[i].space -= tags[i].freDel[j];
-        }
-    }
 }
 
-/// @brief 时间片对齐操作
+// 时间片对齐操作
 void timestamp_action(){ 
     scanf("%*s%d", &TIMESTAMP);
     printf("TIMESTAMP %d\n", TIMESTAMP);
     fflush(stdout);
 }
 
-// 下面是删除操作
 // =============================================================================================
+// 下面是删除操作
 
-/// @brief 磁盘上删除对象 
+// 磁盘上删除对象 
 void delete_one_object(const int& objectId){
     const Object& object = objects[objectId];
     for (int i = 1; i <= REP_NUM; ++i){
@@ -115,7 +107,7 @@ void delete_one_object(const int& objectId){
     }
 }
 
-/// @brief 删除操作
+// 删除操作
 void delete_action(){
     // 处理输入
     static vector<int> deleteObjects(MAX_OBJECT_NUM); // 10^6 * 4 = 4MB
@@ -161,14 +153,13 @@ void delete_action(){
             }
         }
     }
-
     fflush(stdout);
 }
 
-// 下面是写操作
 // =============================================================================================
+// 下面是写操作
 
-/// @brief 对象尝试写入主分区
+// 对象尝试写入主分区
 bool write_to_main_partition(const int& diskId, const int& objectId, const int& replicaId){
     vector<int>& diskUnits = disks[diskId].diskUnits;
     Object& object = objects[objectId];
@@ -220,7 +211,7 @@ bool write_to_main_partition(const int& diskId, const int& objectId, const int& 
     return true;
 }
 
-/// @brief 主分区写不下，尝试从后向前插入磁盘空隙中
+// 主分区写不下，尝试从后向前插入磁盘空隙中
 bool write_to_random_partition(const int& diskId, const int& objectId, const int& replicaId){
     vector<int>& diskUnits = disks[diskId].diskUnits;
     Object& object = objects[objectId];
@@ -303,7 +294,6 @@ bool write_from_mid_sector(const int& diskId, const int& objectId, const int& re
 
 }
 
-
 bool write_one_object(const int& objectId){
     Object& object = objects[objectId];
     Tag& tag = tags[object.tagId];
@@ -342,6 +332,7 @@ bool write_one_object(const int& objectId){
     return true;
 }
 
+// 正常打印给判题机存储信息
 void print_common(const int& _objectId){
     const Object& object = objects[_objectId]; // 引用是个很危险的使用，它可以提高效率，但也有更改原始数据的风险。所以最好加 const
     printf("%d\n", object.id);
@@ -354,7 +345,7 @@ void print_common(const int& _objectId){
     }
 }
 
-/// @brief 与判题机交互逆序写。注：本地 object 维护的信息不变，只是告诉判题机块的写入顺序变了。搭配 cal_block_id() 使用
+// 与判题机交互逆序写。注：本地 object 维护的信息不变，只是告诉判题机块的写入顺序变了。搭配 cal_block_id() 使用
 void print_left_shift(const int& _objectId){
     const Object& object = objects[_objectId];
     printf("%d\n", object.id);
@@ -409,10 +400,10 @@ void write_action(){
     fflush(stdout);
 }
 
-// 下面是读操作
 // =============================================================================================
+// 下面是读操作
 
-/// @brief 每个时间片初始化所有磁头令牌为 G、还有命令
+// 每个时间片初始化所有磁头令牌为 G、还有命令
 void update_disk_point(){
     for(int i = 1; i < disks.size(); ++i){
         disks[i].diskPoint.remainToken = G;
@@ -437,7 +428,7 @@ int cost_token(const int& _diskId, const char& _action){
     return costToken;
 }
 
-/// @brief 磁头 pass
+// 磁头 pass
 bool do_pass(const int& diskId){
     Disk& disk = disks[diskId];
     DiskPoint& diskPoint = disk.diskPoint;
@@ -454,7 +445,7 @@ bool do_pass(const int& diskId){
     return true;
 }
 
-/// @brief 磁头 jump
+// 磁头 jump
 bool do_jump(const int& diskId, const int& unitId){
     Disk& disk = disks[diskId];
     DiskPoint& diskPoint = disk.diskPoint;
@@ -471,7 +462,7 @@ bool do_jump(const int& diskId, const int& unitId){
     return true;
 }
 
-/// @brief 磁头 read
+// 磁头 read
 bool do_read(const int& diskId){
     Disk& disk = disks[diskId];
     DiskPoint& diskPoint = disk.diskPoint;
@@ -489,7 +480,7 @@ bool do_read(const int& diskId){
     return true;
 }
 
-/// 计算磁盘一个位置的价值（等同于对象存储块的价值）NOTE: 暂时未用
+/// NOTE: 暂时未用。计算磁盘一个位置的价值（等同于对象存储块的价值）
 double compute_block_value(const int& diskId, const int& unitId) {
     double val = 0.0;
 
@@ -513,7 +504,7 @@ double compute_block_value(const int& diskId, const int& unitId) {
     return val;
 }
 
-/// 计算指定磁盘上指定区间的读取价值. NOTE: 暂时未用
+/// NOTE: 暂时未用。计算指定磁盘上指定区间的读取价值
 double compute_range_value(int diskId, const pair<int, int>& initRange) {
     double rangeValue = 0.0;
     const int leftRange = initRange.first;  // 左边界
@@ -522,8 +513,9 @@ double compute_range_value(int diskId, const pair<int, int>& initRange) {
         rangeValue += compute_block_value(diskId, i);
     }
     return rangeValue;
-} 
+}
 
+// 每次使用 tagIdRequestNum 前，可以利用该函数遍历整个磁盘检查超时请求，得到最新的 tagIdRequestNum
 void traverse_all_disks_update_requests_num(){
     for(int i = 1; i < disks.size(); ++i){
         for (int j = 1; j <= V; ++j){
@@ -532,10 +524,8 @@ void traverse_all_disks_update_requests_num(){
 
             Object& object = objects[objectId];
             deque<Request>& requests = object.requests;
-            // 先处理掉超时请求
             for (auto it = requests.begin(); it != requests.end();) {
                 Request& request = *it;
-                // 每次读取块时检查,超时的请求直接扔了丢入超时队列，也无需上报了（或许可以减轻 requests 队列，帮助 need_read 判断）
                 if (TIMESTAMP - request.arriveTime > EXTRA_TIME) {
                     it++;
                     requests.pop_front();
@@ -543,7 +533,7 @@ void traverse_all_disks_update_requests_num(){
                     // 更新请求趋势图
                     const int& tagId = objects[objectId].tagId;
                     tagIdRequestNum[tagId]--;
-                } else it++;
+                } else break;
             }
         }
     }
@@ -553,9 +543,9 @@ void traverse_all_disks_update_requests_num(){
 /// NOTE: GAP 是需要调参的，确保这个间隔可以遍历完一个区间
 /// TODO: 设置 3 个或多个 hotTag；并移动磁头到相应位置。经测试，设置 N 个得分最高！不是 N 个最高，而是 N / 2 个时，我应该把磁头分散开来，而不是相邻磁头指向同一个区间，而是隔 N / 2个磁盘的磁头指向同一个区间。所以是因为我的实施不好
 void sync_update_disk_point_position(){
-    if (TIMESTAMP % GAP != 0) return;
+  if (TIMESTAMP % GAP != 0) return;
+  
     traverse_all_disks_update_requests_num();
-
     static vector<pair<int, int>> hotTags(M + 1);   // pair<int, int>: {tagId, requestNum}
     /// 更新 hotTags（并进行排序）, 利用 tagId 为 i 的请求数量进行排序。TODO: 综合 freRead / space、区间价值等
     for (int i = 1; i < hotTags.size(); ++i){
@@ -569,7 +559,7 @@ void sync_update_disk_point_position(){
         const Tag &tag1 = tags[tagsIndex1], tag2 = tags[tagsIndex2];
         const int duration1 = tag1.endUnit - tag1.startUnit, duration2 = tag2.endUnit - tag2.startUnit;
         return (static_cast<double>(x.second) / duration1) > (static_cast<double>(y.second) / duration2);
-#elif false
+#elif 0
         const int &tagsIndex1 = tagIdToTagsIndex[x.first], tagsIndex2 = tagIdToTagsIndex[y.first];
         const Tag &tag1 = tags[tagsIndex1], tag2 = tags[tagsIndex2];
         const int duration1 = tag1.endUnit - tag1.startUnit, duration2 = tag2.endUnit - tag2.startUnit;
@@ -584,7 +574,7 @@ void sync_update_disk_point_position(){
 
     // 每一个磁头移动到相应 hotTag 的区间起始位置
     // vector<int> hotTagIds = { 0, 1, 2, 3, 4, 5, 1, 2, 3, 1, 2}; // 写死，使用 5 个 hotTag: 3 + 3 + 2 + 1 + 1
-    /// TODO: 调参; NOTE: 经测试，使用 4 个 hotTag 最高: 3 + 3 + 3 + 1 > 3 + 3 + 2 + 2
+    /// NOTE: 经测试，使用 4 个 hotTag 最高: 3 + 3 + 3 + 1 > 3 + 3 + 2 + 2
     const int hotTagNum = 3;
     int hotTagStartIndex = rand() % hotTagNum + 1; // 索引 [1, hotTagNum]
     for (int i = 1; i < disks.size(); ++i){
@@ -700,8 +690,6 @@ void async_update_disk_point_position(){
         }
         // 更新 hotTagDisks
         hotTagDisks[i].first = selectTagId;
-        // printf("TEST: ==============================\n");
-        // printf("selectTagId: %d\n", selectTagId);
         // 更新磁头
         for(int j = 0; j < useDisks.size(); ++j){
             const int& diskId = useDisks[j];
@@ -732,7 +720,7 @@ void async_update_disk_point_position(){
     }
 }
 
-/// @brief 读一个块时，需要判断其是第几个块，以便于把请求的 hasRead 相应位置置 true
+// 读一个块时，需要判断其是第几个块，以便于把请求的 hasRead 相应位置置 true
 int cal_block_id(const int& diskId, const int& unitId){
     // 确保 object 不为 0，以防万一。主要是这个特况需要函数外部确认,即外部调用该函数时要确保这个磁盘位置放的有对象...
     assert(disks[diskId].diskUnits[unitId] != 0);  
@@ -781,7 +769,7 @@ int cal_block_id(const int& diskId, const int& unitId){
     }
 }
 
-/// @brief 简单判断一个块是否需要读？这里逻辑比较简单：依据请求队列中是否需要这个块。
+// 简单请求队列中是否需要这个块；同时处理超时请求
 bool request_need_this_block(const int& diskId, const int& unitId){
     if(disks[diskId].diskUnits[unitId] == 0) return false; // 先要判断 objectId ！= 0
 
@@ -799,7 +787,7 @@ bool request_need_this_block(const int& diskId, const int& unitId){
             // 更新请求趋势图
             const int& tagId = objects[objectId].tagId;
             tagIdRequestNum[tagId]--;
-        }else it++;
+        }else break;
     }
     // 判断是否有未超时的请求需要该块
     for (auto it = requests.crbegin(); it != requests.crend(); it++){   // 我用成 [crend(), crbegin())了...用反了
@@ -838,7 +826,7 @@ void dfs(int& minCost, string& minCostActions, int cost, string actions, char pr
     }
 }
 
-/// @brief 某一个块可能并不需要，但是为了保持连续阅读，有时也需要 read
+// 某一个块可能并不需要，但是为了保持连续阅读，有时也需要 read
 bool determine_read(const int& _diskId, const int& _unitId, const int& _objectId){
     static std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
 
@@ -853,7 +841,6 @@ bool determine_read(const int& _diskId, const int& _unitId, const int& _objectId
     std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
     int durationSeconds = std::chrono::duration_cast<std::chrono::seconds>(end - begin).count();
     if(USE_DFS && durationSeconds <= 270){ // 255s 前用 DFS，时间不够了留 40s 够了能跑完
-        
         // 使用 DFS 判断是否需要读
         int minCost = INT_MAX;
         string minCostActions = "";
@@ -878,7 +865,7 @@ bool determine_read(const int& _diskId, const int& _unitId, const int& _objectId
     }
 }
 
-/// @brief 检查一个 request 的 hasRead 数组，判断 request 是否完成
+// 检查 1 个 request 的 hasRead 数组，判断 request 是否完成
 bool check_request_is_done(const Request& _request){
     for (int i = 1; i < _request.hasRead.size(); ++i){
         if(_request.hasRead[i] == false) return false;
@@ -915,7 +902,7 @@ void read_action(){
         // 令牌未到山穷水尽之地就要一直尝试消耗
         while(true){ 
             const int unitId = diskPoint.position;      // unitId 不可用引用，因为后面 cal_block_id 时磁头移动了
-            const int& objectId = diskUnits[unitId];    // 注意： objectId 可能为 0。不知道为什么没判断居然没报错？
+            const int& objectId = diskUnits[unitId];    // 注意： objectId 可能为 0
             // 需要 p、r 但令牌不够，这个磁盘磁头的动作结束         
             if(!determine_read(i, unitId, objectId)){
                 if(!do_pass(i)) break;
@@ -957,7 +944,7 @@ void read_action(){
         if(cmd[0] != 'j') printf("#\n");
         else printf("\n");
     }
-    printf("%d\n", finishRequests.size());
+    printf("%d\n", static_cast<int>(finishRequests.size()));
     for (int i = 0; i < finishRequests.size(); ++i){
         printf("%d\n", finishRequests[i]);
     }

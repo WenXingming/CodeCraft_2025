@@ -92,19 +92,14 @@ struct Tag{
     vector<int> freWrite;
     vector<int> freRead;
 
-    int space;
-    int maxSpace;
     // 非必要不提供默认构造函数。可以使用【默认参数】
-    Tag(int _writeMainDiskId = 1, int _writeRandomDiskId = 1, int _startUnit = 1, int _endUnit = 1, int _updateNum = 0, int _space = 0, int _maxSpace = 0) {
+    Tag(int _writeMainDiskId = 1, int _writeRandomDiskId = 1, int _startUnit = 1, int _endUnit = 1, int _updateNum = 0) {
         // id 待留运行时初始化
         this->writeMainDiskId = _writeMainDiskId;
         this->writeRandomDiskId = _writeRandomDiskId;
         this->startUnit = _startUnit;
         this->endUnit = _endUnit;
         this->updateNum = _updateNum;
-
-        this->space = _space;       // 暂未使用
-        this->maxSpace = _maxSpace; // 暂未使用
 
         this->freDel.assign((T - 1) / FRE_PER_SLICING + 2, 0);
         this->freWrite.assign((T - 1) / FRE_PER_SLICING + 2, 0);
