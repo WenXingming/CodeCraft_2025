@@ -2,7 +2,7 @@
 
 const bool USE_LEFT_SHIFT = false;   // 使用逆序写
 const bool USE_DFS = false;
-const int DFS_DEPTH = 17;           // [1, DFS_DEPTH)
+const int DFS_DEPTH = 19;           // [1, DFS_DEPTH)
 
 const int GAP = 45;
 // 45, 930w; 47, 930w; 50, 930w; 52, 929w; 55, 925w; 60, 920w; 65, 915w;
@@ -48,6 +48,10 @@ void sort_tags(){
         }
         return totalRead1 >= totalRead2;
     });
+    // 把每个标签的起始磁盘不全置为 1
+    for(int i = 1; i < tags.size(); ++i){
+        tags[i].writeMainDiskId = (i % N == 0 ? i : i % N);
+    }
     // 维护 hash 表，快速根据 tagId 找到相应 tag 对象在 tags 的索引。f(i): tagId 为 i 的 tag 对象在 tags 中的下标
     for (int i = 1; i < tagIdToTagsIndex.size(); ++i) {
         for (int j = 1; j < tags.size(); ++j) {
@@ -74,7 +78,7 @@ void do_partition(){
     // 根据每个标签的百分比，计算应该在磁盘上分配的容量，并计算得到每个标签的区间。NOTE: 10% free 分区剩余（已取消）。
     vector<int> allocSpaces(tags.size());
     for (int i = 1; i < tags.size(); ++i){
-        /// NOTE: 可选按「峰值容量」or「实际容量」进行分区
+        // 可选按「峰值容量」or「实际容量」进行分区
         allocSpaces[i] = V * (static_cast<double>(maxTagSpaces[i]) / totalMaxSpace); 
         tags[i].startUnit = tags[i - 1].endUnit;
         tags[i].endUnit = tags[i].startUnit + allocSpaces[i];
@@ -185,7 +189,12 @@ bool write_to_main_partition(const int& diskId, const int& objectId, const int& 
         while (j < tag.endUnit && diskUnits[j] == 0) {
             j++;
         }
-
+#if 1
+        if(j-i >= object.size){ index = i; break;} // 找到了大小最合适的连续块
+        else{
+            i = j; continue;
+        }
+#else
         if(j-i == object.size){ index = i; break;} // 找到了大小最合适的连续块
         else if(j-i < object.size){ i = j; continue;}
         else{
@@ -197,6 +206,7 @@ bool write_to_main_partition(const int& diskId, const int& objectId, const int& 
                 i = j;
             }
         }
+#endif
     }
     // 写入（从 index 写入）
     for (int i = index, cnt = 0; i < tag.endUnit && cnt < object.size; ++i){
@@ -543,16 +553,33 @@ void traverse_all_disks_update_requests_num(){
 /// NOTE: GAP 是需要调参的，确保这个间隔可以遍历完一个区间
 /// TODO: 设置 3 个或多个 hotTag；并移动磁头到相应位置。经测试，设置 N 个得分最高！不是 N 个最高，而是 N / 2 个时，我应该把磁头分散开来，而不是相邻磁头指向同一个区间，而是隔 N / 2个磁盘的磁头指向同一个区间。所以是因为我的实施不好
 void sync_update_disk_point_position(){
-  if (TIMESTAMP % GAP != 0) return;
+    if (TIMESTAMP % GAP != 0 && TIMESTAMP != 86400) return;
   
     traverse_all_disks_update_requests_num();
     static vector<pair<int, int>> hotTags(M + 1);   // pair<int, int>: {tagId, requestNum}
     /// 更新 hotTags（并进行排序）, 利用 tagId 为 i 的请求数量进行排序。TODO: 综合 freRead / space、区间价值等
+    // 计算所有的 requestsNum
+    int totalRequestNum = 0;
     for (int i = 1; i < hotTags.size(); ++i){
         hotTags[i] = { i,tagIdRequestNum[i]};
+        totalRequestNum += tagIdRequestNum[i];
     }
-    std::sort(hotTags.begin() + 1, hotTags.end(), [](const pair<int, int>& x, const pair<int, int>& y) {
-#if 1 
+    std::sort(hotTags.begin() + 1, hotTags.end(),[&](const pair<int, int> &x, const pair<int, int> &y) {
+#if 0
+        // 计算这个 1800 时间片总阅读量
+        int nth = (TIMESTAMP - 1) / FRE_PER_SLICING + 1;
+        int totalRead = 0;
+        for(int i = 1; i < tags.size(); ++i){
+            totalRead += tags[i].freRead[nth];
+        }
+        // 计算 x, y 的阅读量比值
+        const int &tagsIndex1 = tagIdToTagsIndex[x.first], tagsIndex2 = tagIdToTagsIndex[y.first];
+        const Tag &tag1 = tags[tagsIndex1], tag2 = tags[tagsIndex2];
+        double readRate1 = static_cast<double>(tag1.freRead[nth]) / totalRead, readRate2 = static_cast<double>(tag2.freRead[nth]) / totalRead;
+
+        double requestNumRate1 = static_cast<double>(x.second) / totalRequestNum, requestNumRate2 = static_cast<double>(y.second) / totalRequestNum;
+        return readRate1 + requestNumRate1 > readRate2 + requestNumRate2;
+#elif 1 
         return x.second > y.second;
 #elif false
         const int &tagsIndex1 = tagIdToTagsIndex[x.first], tagsIndex2 = tagIdToTagsIndex[y.first];
@@ -592,13 +619,14 @@ void sync_update_disk_point_position(){
         Disk& disk = disks[i];
         DiskPoint& diskPoint = disk.diskPoint;
         // 对于每一个磁头，计算消耗，判断是用 j or p
-        int distance = ((startUnit - diskPoint.position) + V) % V; // 计算 pass 的步数。磁头只能向后 pass：startUnit - position > or < 0
+        int j = startUnit; // 优化，找到第一个需要读的位置跳，节约令牌
+        while (!request_need_this_block(i, j)) {
+          j = j % V + 1;
+          if (j == startUnit) break; // 避免死循环，设置最大尝试次数
+        }
+
+        int distance = ((j - diskPoint.position) + V) % V; // 计算 pass 的步数。磁头只能向后 pass：startUnit - position > or < 0
         if(distance >= diskPoint.remainToken){ // jump
-            int j = startUnit; // 优化，找到第一个需要读的位置跳，节约令牌
-            while(!request_need_this_block(i, j)) {
-                j = j % V + 1;
-                if(j == startUnit) break; // 避免死循环，设置最大尝试次数
-            }
             if(!do_jump(i, j)) assert(false);
             continue;
         }

@@ -35,7 +35,7 @@ using namespace std;
 int T, M, N, V, G;
 int TIMESTAMP;
 
-const int NEAR_NUM = 45; //相邻的 45 个对象写入同一个磁盘
+const int NEAR_NUM = 49; //相邻的 NEAR_NUM  个对象写入同一个磁盘
 
 // 结构体定义
 // ===================================================================================
