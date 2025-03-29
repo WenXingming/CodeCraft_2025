@@ -490,7 +490,6 @@ bool do_read(const int& diskId){
 }
 
 /// 计算磁盘一个位置的价值（等同于对象存储块的价值）NOTE: 暂时未用
-int cal_block_id(const int& diskId, const int& unitId);
 double compute_block_value(const int& diskId, const int& unitId) {
     double val = 0.0;
 
@@ -525,7 +524,7 @@ double compute_range_value(int diskId, const pair<int, int>& initRange) {
     return rangeValue;
 } 
 
-void traverse_all_disks_process_requests_num(){
+void traverse_all_disks_update_requests_num(){
     for(int i = 1; i < disks.size(); ++i){
         for (int j = 1; j <= V; ++j){
             const int& objectId = disks[i].diskUnits[j];
@@ -554,17 +553,33 @@ void traverse_all_disks_process_requests_num(){
 /// NOTE: GAP 是需要调参的，确保这个间隔可以遍历完一个区间
 /// TODO: 设置 3 个或多个 hotTag；并移动磁头到相应位置。经测试，设置 N 个得分最高！不是 N 个最高，而是 N / 2 个时，我应该把磁头分散开来，而不是相邻磁头指向同一个区间，而是隔 N / 2个磁盘的磁头指向同一个区间。所以是因为我的实施不好
 void sync_update_disk_point_position(){
-    static vector<pair<int, int>> hotTags(M + 1);   // pair<int, int>: {tagId, requestNum}
-
     if (TIMESTAMP % GAP != 0) return;
-    traverse_all_disks_process_requests_num();
+    traverse_all_disks_update_requests_num();
 
+    static vector<pair<int, int>> hotTags(M + 1);   // pair<int, int>: {tagId, requestNum}
     /// 更新 hotTags（并进行排序）, 利用 tagId 为 i 的请求数量进行排序。TODO: 综合 freRead / space、区间价值等
     for (int i = 1; i < hotTags.size(); ++i){
         hotTags[i] = { i,tagIdRequestNum[i]};
     }
     std::sort(hotTags.begin(), hotTags.end(), [](const pair<int, int>& x, const pair<int, int>& y) {
+#if true 
         return x.second > y.second;
+#elif false
+        const int &tagsIndex1 = tagIdToTagsIndex[x.first], tagsIndex2 = tagIdToTagsIndex[y.first];
+        const Tag &tag1 = tags[tagsIndex1], tag2 = tags[tagsIndex2];
+        const int duration1 = tag1.endUnit - tag1.startUnit, duration2 = tag2.endUnit - tag2.startUnit;
+        return (static_cast<double>(x.second) / duration1) > (static_cast<double>(y.second) / duration2);
+#elif false
+        const int &tagsIndex1 = tagIdToTagsIndex[x.first], tagsIndex2 = tagIdToTagsIndex[y.first];
+        const Tag &tag1 = tags[tagsIndex1], tag2 = tags[tagsIndex2];
+        const int duration1 = tag1.endUnit - tag1.startUnit, duration2 = tag2.endUnit - tag2.startUnit;
+        int rangeVal1 = 0, rangeVal2 = 0;
+        for(int i = 1; i < disks.size(); ++i){
+            rangeVal1 += compute_range_value(i, { tag1.startUnit, tag1.endUnit });
+            rangeVal2 += compute_range_value(i, { tag2.startUnit, tag2.endUnit });
+        }
+        return (static_cast<double>(rangeVal1) / duration1) > (static_cast<double>(rangeVal2) / duration2);
+#endif
     });
 
     // 每一个磁头移动到相应 hotTag 的区间起始位置
@@ -589,7 +604,12 @@ void sync_update_disk_point_position(){
         // 对于每一个磁头，计算消耗，判断是用 j or p
         int distance = ((startUnit - diskPoint.position) + V) % V; // 计算 pass 的步数。磁头只能向后 pass：startUnit - position > or < 0
         if(distance >= diskPoint.remainToken){ // jump
-            if(!do_jump(i, startUnit)) assert(false);
+            int j = startUnit; // 优化，找到第一个需要读的位置跳，节约令牌
+            while(!request_need_this_block(i, j)) {
+                j = j % V + 1;
+                if(j == startUnit) break; // 避免死循环，设置最大尝试次数
+            }
+            if(!do_jump(i, j)) assert(false);
             continue;
         }
         while(distance--){  // 非 jump 就 pass
