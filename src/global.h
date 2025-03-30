@@ -35,8 +35,6 @@ using namespace std;
 int T, M, N, V, G;
 int TIMESTAMP;
 
-const int NEAR_NUM = 49; //相邻的 NEAR_NUM  个对象写入同一个磁盘
-
 // 结构体定义
 // ===================================================================================
 
@@ -77,6 +75,7 @@ struct Object{
     }
 };
 
+const int NEAR_NUM = 45; //相邻的 NEAR_NUM  个对象写入同一个磁盘
 struct Tag{
     int id;
     // 管理标签写入磁盘
@@ -86,6 +85,7 @@ struct Tag{
     int startUnit;          // 此 id 标签的对象在磁盘分区（主分区）上的起始位置, [1, V]
     int endUnit;            // 此 id 标签的对象在磁盘分区（主分区）上的终止位置
 
+    int NearNum;
     int updateNum;
 
     vector<int> freDel;     // NOTE: 下标从 1 开始
@@ -99,6 +99,8 @@ struct Tag{
         this->writeRandomDiskId = _writeRandomDiskId;
         this->startUnit = _startUnit;
         this->endUnit = _endUnit;
+
+        this->NearNum = 0;
         this->updateNum = _updateNum;
 
         this->freDel.assign((T - 1) / FRE_PER_SLICING + 2, 0);
@@ -115,7 +117,7 @@ struct Tag{
         /// TODO: 调参
         if (updateNum != -1) {
             ++updateNum;
-            if ((updateNum % 3 == 0) && (updateNum % (NEAR_NUM*3) != 0)) { // 相邻的 45 个对象写入同一个磁盘, 每个对象 3 个副本
+            if ((updateNum % 3 == 0) && (updateNum % (NearNum*3) != 0)) { // 相邻的 45 个对象写入同一个磁盘, 每个对象 3 个副本
                 writeMainDiskId = (writeMainDiskId - 3 + N) % N;
                 if (!writeMainDiskId) writeMainDiskId = N;
             }

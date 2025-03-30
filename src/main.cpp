@@ -1,4 +1,6 @@
 #include "global.h"
+#include <cassert>
+#include <cmath>
 
 const bool USE_LEFT_SHIFT = false;   // 使用逆序写
 const bool USE_DFS = false;
@@ -84,6 +86,10 @@ void do_partition(){
         tags[i].endUnit = tags[i].startUnit + allocSpaces[i];
 
         if(i == M) tags[i].endUnit = V + 1; // 避免浮点数导致分区越界；同时也避免尾部少量空间未被利用
+    }
+    // 初始化 NearNum
+    for(int i = 1; i < tags.size(); ++i){
+        tags[i].NearNum = (tags[i].endUnit - tags[i].startUnit) / 20;   // 相邻比例为 k 的对象写入同一个磁盘
     }
 }
 
@@ -189,7 +195,7 @@ bool write_to_main_partition(const int& diskId, const int& objectId, const int& 
         while (j < tag.endUnit && diskUnits[j] == 0) {
             j++;
         }
-#if 1
+#if 0
         if(j-i >= object.size){ index = i; break;} // 找到了大小最合适的连续块
         else{
             i = j; continue;
@@ -233,13 +239,13 @@ bool write_to_random_partition(const int& diskId, const int& objectId, const int
     }
     // 判断整块磁盘的剩余空间
     int restSpace = 0;
-    for (int i = V; i >= tags[1].startUnit; --i){
+    for (int i = V; i >= 1; --i){
         if(diskUnits[i] == 0) restSpace ++;
         if(restSpace == object.size) break;
     }
     if(restSpace != object.size) return false;
     // 写入磁盘：见缝插针（tricks: 从后到前见缝插针）
-    for(int i = V, cnt = 0; i >= tags[1].startUnit && cnt < object.size; --i){
+    for(int i = V, cnt = 0; i >= 1 && cnt < object.size; --i){
         if(diskUnits[i] == 0) {
             diskUnits[i] = objectId;
             cnt++;
@@ -265,13 +271,14 @@ bool write_from_mid_sector(const int& diskId, const int& objectId, const int& re
 
     // 判断整块磁盘的剩余空间
     int restSpace = 0;
-    for (int i = V; i >= tags[1].startUnit; --i){
+    for (int i = V; i >= 1; --i){
         if(diskUnits[i] == 0) restSpace ++;
         if(restSpace == object.size) break;
     }
     if(restSpace != object.size) return false;
 
     // 双指针填入
+    // int leftUnit = tag.startUnit;
     int leftUnit = tag.startUnit;
     int rightUnit = leftUnit + 1;
 
@@ -306,12 +313,13 @@ bool write_from_mid_sector(const int& diskId, const int& objectId, const int& re
 
 bool write_one_object(const int& objectId){
     Object& object = objects[objectId];
-    Tag& tag = tags[object.tagId];
+    const int& tagIndex = tagIdToTagsIndex[object.tagId];
+    Tag& tag = tags[tagIndex];
     // 有 3 个副本
     for (int k = 1; k <= REP_NUM; ++k){
         // 遍历所有磁盘，尝试写入主分区
         bool isWriteSucess = false;
-        for (int i = 1; i <= N * NEAR_NUM; ++i) {
+        for (int i = 1; i <= N * tag.NearNum; ++i) {
             int writeDiskId = tag.update_main_disk_id();
             if (write_to_main_partition(writeDiskId, objectId, k)) {
                 isWriteSucess = true;
@@ -549,20 +557,89 @@ void traverse_all_disks_update_requests_num(){
     }
 }
 
+#if 0
+void sync_update_disk_point_position_2(){
+    if (TIMESTAMP % GAP != 0) return;
+    traverse_all_disks_update_requests_num();
+
+    static vector<pair<int, int>> hotTags(M + 1);   // pair<int, int>: {tagId, requestNum}
+    /// 更新 hotTags（并进行排序）, 利用 tagId 为 i 的请求数量进行排序。
+    for (int i = 1; i < hotTags.size(); ++i){
+        hotTags[i] = { i,tagIdRequestNum[i]};
+    }
+    std::sort(hotTags.begin() + 1, hotTags.end(),[](const pair<int, int> &x, const pair<int, int> &y) {
+        return x.second > y.second;
+    });
+    // 计算请求了最大的前 10 个请求的 requestsNum
+    const int NUM_OF_TAG = 4;
+    int partialRequestNum = 0;
+    for(int i = 1; i <= NUM_OF_TAG; ++i){
+        partialRequestNum += hotTags[i].second;
+    }
+    // 计算比例，并向上取整
+    int cnt = 0;
+    for(int i = 1; i <= NUM_OF_TAG; ++i){
+        double rate = static_cast<double>(hotTags[i].second) / partialRequestNum;
+        hotTags[i].second = static_cast<int>(std::round(rate * N)); // 可以设置 > 0.5 再向上取整
+        hotTags[i].second = (hotTags[i].second > 3 ? 3 : hotTags[i].second);
+        cnt += hotTags[i].second;
+    }
+    while(cnt < N){
+        for(int i = 1; i <= NUM_OF_TAG; ++i){
+            if(hotTags[i].second < 3) {
+                hotTags[i].second += 1;
+                if(++cnt >= N) break;
+            }
+        }
+    }
+    assert(cnt >= N);
+    // 分配硬盘并跳跃磁头
+    for (int i = 1, diskId = 1; i < disks.size(); ++i, diskId = (diskId + 3) % N){
+        if(diskId == 0) diskId = N;
+        int selectTagId = 0;
+        for(int i = 1; i <= NUM_OF_TAG; ++i){
+            if(hotTags[i].second > 0) {
+                selectTagId = hotTags[i].first;
+                hotTags[i].second--;
+                break;
+            }
+        }
+        const int& tagsIndex = tagIdToTagsIndex[selectTagId];
+        const Tag& tag = tags[tagsIndex];
+        const int& startUnit = tag.startUnit;
+        Disk& disk = disks[diskId];
+        DiskPoint& diskPoint = disk.diskPoint;
+        // 对于每一个磁头，计算消耗，判断是用 j or p
+        int j = startUnit; // 优化，找到第一个需要读的位置跳，节约令牌
+        while (!request_need_this_block(i, j)) {
+          j = j % V + 1;
+          if (j == startUnit) break; // 避免死循环，设置最大尝试次数
+        }
+
+        int distance = ((j - diskPoint.position) + V) % V; // 计算 pass 的步数。磁头只能向后 pass：startUnit - position > or < 0
+        if(distance >= diskPoint.remainToken){ // jump
+            if(!do_jump(i, j)) assert(false);
+            continue;
+        }
+        while(distance--){  // 非 jump 就 pass
+            if(!do_pass(i)) assert(false);
+        }
+    }
+}
+#endif
+
+
+
 /// @brief 每隔 GAP 根据 tag 的请求趋势图【等信息】尝试更新（重置）所有磁头的起始 read 位置
 /// NOTE: GAP 是需要调参的，确保这个间隔可以遍历完一个区间
 /// TODO: 设置 3 个或多个 hotTag；并移动磁头到相应位置。经测试，设置 N 个得分最高！不是 N 个最高，而是 N / 2 个时，我应该把磁头分散开来，而不是相邻磁头指向同一个区间，而是隔 N / 2个磁盘的磁头指向同一个区间。所以是因为我的实施不好
 void sync_update_disk_point_position(){
-    if (TIMESTAMP % GAP != 0 && TIMESTAMP != 86400) return;
-  
     traverse_all_disks_update_requests_num();
+
     static vector<pair<int, int>> hotTags(M + 1);   // pair<int, int>: {tagId, requestNum}
     /// 更新 hotTags（并进行排序）, 利用 tagId 为 i 的请求数量进行排序。TODO: 综合 freRead / space、区间价值等
-    // 计算所有的 requestsNum
-    int totalRequestNum = 0;
     for (int i = 1; i < hotTags.size(); ++i){
         hotTags[i] = { i,tagIdRequestNum[i]};
-        totalRequestNum += tagIdRequestNum[i];
     }
     std::sort(hotTags.begin() + 1, hotTags.end(),[&](const pair<int, int> &x, const pair<int, int> &y) {
 #if 0
@@ -600,15 +677,13 @@ void sync_update_disk_point_position(){
     });
 
     // 每一个磁头移动到相应 hotTag 的区间起始位置
-    // vector<int> hotTagIds = { 0, 1, 2, 3, 4, 5, 1, 2, 3, 1, 2}; // 写死，使用 5 个 hotTag: 3 + 3 + 2 + 1 + 1
-    /// NOTE: 经测试，使用 4 个 hotTag 最高: 3 + 3 + 3 + 1 > 3 + 3 + 2 + 2
     const int hotTagNum = 3;
-    int hotTagStartIndex = rand() % hotTagNum + 1; // 索引 [1, hotTagNum]
+    int hotTagStartIndex = rand() % hotTagNum  + 1; // 索引 [1, hotTagNum]
+    vector<int> hotTagIds = { 0, 1, 2, 1, 3, 2, 1, 3, 1, 2, 4};
     for (int i = 1; i < disks.size(); ++i){
         /// WARNING: 每个磁盘头都移动到一个 tag 的 startUnit，最小的数据集上，3 个磁盘只有 2 个 tag，不够分，所以报错！跑不了小数据集
         /// SOLVE: 避免 hotTag 的数量少于 磁盘数量 造成越界访问
         
-        /// NOTE: 3 + 3 + 3 + 1 > 3 + 3 + 2 + 2
         int tagId = hotTagStartIndex < hotTags.size() ? hotTags[hotTagStartIndex].first : hotTags[hotTags.size()-1].first;
         hotTagStartIndex = hotTagStartIndex % hotTagNum + 1;
         if(i == disks.size()-1) tagId = hotTagNum+1 < hotTags.size() ? hotTags[hotTagNum+1].first : hotTags[hotTags.size()-1].first;
@@ -639,7 +714,7 @@ void sync_update_disk_point_position(){
 void async_update_disk_point_position(){
     static vector<pair<int, int>> hotTags(M + 1);   // pair<int, int>: {tagId, requestNum}
 
-    static vector<pair<int, vector<int>>> hotTagDisks(4 + 1); // 记录 3+3+3+1 共4个hotTags使用的 hotTag, 以及每一个 hotTag 使用的磁盘号
+    static vector<pair<int, vector<int>>> hotTagDisks(4 + 1); // 记录 3+3+3+1 共4个hotTags使用的 hotTagId, 以及每一个 hotTag 使用的磁盘号
     static bool isInit = false;
     if(!isInit){
         isInit = true;
@@ -922,7 +997,14 @@ void read_action(){
     }
     // 开始读取
     update_disk_point();
-    sync_update_disk_point_position();
+    if (TIMESTAMP % GAP == 0){ sync_update_disk_point_position(); }
+    // else{
+    //     async_update_disk_point_position();
+    // }
+
+    // async_update_disk_point_position();
+    // async_2();
+
     vector<int> finishRequests;
     for(int i = 1; i < disks.size(); ++i){ // 每个磁头，串行开始读取
         const auto& diskUnits = disks[i].diskUnits;
