@@ -18,7 +18,6 @@ void init_global_container() {
 	}
 	objects.resize(MAX_OBJECT_NUM + 1); // 待留写入时初始化每个 object 对象
 	disks.assign(N + 1, Disk());
-	tagIdRequestNum.assign(M + 1, 0);
 }
 
 // init tags
@@ -127,15 +126,10 @@ void delete_action() {
 				Request& request = requests.front();
 				requests.pop_front();
 				printf("%d\n", request.id);
-				// 请求趋势图也要更新
-				const int& tagId = object.tagId;
-				tagIdRequestNum[tagId]--;
-				// assert(tagIdRequestNum[tagId] >= 0);
 			} else if (!timeoutRequests.empty()) {
 				Request& request = timeoutRequests.front();
 				timeoutRequests.pop();
 				printf("%d\n", request.id);
-				// 请求趋势图也要更新, 超时的已经在插入请求到请求队列时更新了
 			}
 		}
 	}
@@ -454,65 +448,17 @@ double compute_range_value(int diskId, const pair<int, int>& initRange) {
 	return rangeValue;
 }
 
-// 每次使用 tagIdRequestNum 前，可以利用该函数遍历整个磁盘检查超时请求，得到最新的 tagIdRequestNum
-void traverse_all_disks_update_requests_num() {
-	for (int i = 1; i < disks.size(); ++i) {
-		for (int j = 1; j <= V; ++j) {
-			const int& objectId = disks[i].diskUnits[j];
-			if (objectId == 0) continue;
-
-			Object& object = objects[objectId];
-			deque<Request>& requests = object.requests;
-			for (auto it = requests.begin(); it != requests.end();) {
-				Request& request = *it;
-				if (TIMESTAMP - request.arriveTime > EXTRA_TIME) {
-					it++;
-					requests.pop_front();
-					objects[objectId].timeoutRequests.push(request);
-					// 更新请求趋势图
-					const int& tagId = objects[objectId].tagId;
-					tagIdRequestNum[tagId]--;
-				} else break;
-			}
-		}
-	}
-}
-
 /// @brief 每隔 GAP 根据 tag 的请求趋势图【等信息】尝试更新（重置）所有磁头的起始 read 位置
 /// NOTE: GAP 是需要调参的，确保这个间隔可以遍历完一个区间
-/// TODO: 设置 3 个或多个 hotTag；并移动磁头到相应位置。经测试，设置 N 个得分最高！不是 N 个最高，而是 N / 2 个时，我应该把磁头分散开来，而不是相邻磁头指向同一个区间，而是隔 N / 2个磁盘的磁头指向同一个区间。所以是因为我的实施不好
+/// NOTE: 每个磁盘都要尽量找最热门的标签，同时相同标签要隔 3 个盘，避免抢着干同一份工作。理论证明：3+3+3+1 最优。
 void sync_update_disk_point_position() {
-	traverse_all_disks_update_requests_num();
-
-	static vector<pair<int, int>> hotTags(M + 1);   // pair<int, int>: {tagId, requestNum}
-	/// 更新 hotTags（并进行排序）, 利用 tagId 为 i 的请求数量进行排序。TODO: 综合 freRead / space、区间价值等
-	for (int i = 1; i < hotTags.size(); ++i) {
-		hotTags[i] = { i,tagIdRequestNum[i] };
+	static vector<int> hotTags(M + 1);
+	// 根据区间价值进行排序
+	for(int i = 1; i < hotTags.size(); ++i){
+		hotTags[i] = i;
 	}
-	std::sort(hotTags.begin() + 1, hotTags.end(), [&](const pair<int, int>& x, const pair<int, int>& y) {
-#if 0
-		// 计算这个 1800 时间片总阅读量
-		int nth = (TIMESTAMP - 1) / FRE_PER_SLICING + 1;
-		int totalRead = 0;
-		for (int i = 1; i < tags.size(); ++i) {
-			totalRead += tags[i].freRead[nth];
-		}
-		// 计算 x, y 的阅读量比值
-		const int& tagsIndex1 = tagIdToTagsIndex[x.first], tagsIndex2 = tagIdToTagsIndex[y.first];
-		const Tag& tag1 = tags[tagsIndex1], tag2 = tags[tagsIndex2];
-		double readRate1 = static_cast<double>(tag1.freRead[nth]) / totalRead, readRate2 = static_cast<double>(tag2.freRead[nth]) / totalRead;
-
-		double requestNumRate1 = static_cast<double>(x.second) / totalRequestNum, requestNumRate2 = static_cast<double>(y.second) / totalRequestNum;
-		return readRate1 + requestNumRate1 > readRate2 + requestNumRate2;
-#elif 0 
-		return x.second > y.second;
-#elif false
-		const int& tagsIndex1 = tagIdToTagsIndex[x.first], tagsIndex2 = tagIdToTagsIndex[y.first];
-		const Tag& tag1 = tags[tagsIndex1], tag2 = tags[tagsIndex2];
-		const int duration1 = tag1.endUnit - tag1.startUnit, duration2 = tag2.endUnit - tag2.startUnit;
-		return (static_cast<double>(x.second) / duration1) > (static_cast<double>(y.second) / duration2);
-#elif 1
-		const Tag& tag1 = tags[x.first], tag2 = tags[y.first];
+	std::sort(hotTags.begin() + 1, hotTags.end(), [&](const int& x, const int& y) {
+		const Tag& tag1 = tags[x], tag2 = tags[y];
 		const int duration1 = tag1.endUnit - tag1.startUnit, duration2 = tag2.endUnit - tag2.startUnit;
 		int rangeVal1 = 0, rangeVal2 = 0;
 		for (int i = 1; i < disks.size(); ++i) {
@@ -520,7 +466,6 @@ void sync_update_disk_point_position() {
 			rangeVal2 += compute_range_value(i, { tag2.startUnit, tag2.endUnit });
 		}
 		return (static_cast<double>(rangeVal1) / duration1) > (static_cast<double>(rangeVal2) / duration2);
-#endif
 		});
 
 	// 每一个磁头移动到相应 hotTag 的区间起始位置
@@ -531,9 +476,9 @@ void sync_update_disk_point_position() {
 		/// WARNING: 每个磁盘头都移动到一个 tag 的 startUnit，最小的数据集上，3 个磁盘只有 2 个 tag，不够分，所以报错！跑不了小数据集
 		/// SOLVE: 避免 hotTag 的数量少于 磁盘数量 造成越界访问
 
-		int tagId = hotTagStartIndex < hotTags.size() ? hotTags[hotTagStartIndex].first : hotTags[hotTags.size() - 1].first;
+		int tagId = hotTagStartIndex < hotTags.size() ? hotTags[hotTagStartIndex] : hotTags[hotTags.size() - 1];
 		hotTagStartIndex = hotTagStartIndex % hotTagNum + 1;
-		if (i == disks.size() - 1) tagId = hotTagNum + 1 < hotTags.size() ? hotTags[hotTagNum + 1].first : hotTags[hotTags.size() - 1].first;
+		if (i == disks.size() - 1) tagId = hotTagNum + 1 < hotTags.size() ? hotTags[hotTagNum + 1] : hotTags[hotTags.size() - 1];
 
 		const Tag& tag = tags[tagId];
 		const int& startUnit = tag.startUnit;
@@ -588,11 +533,6 @@ void async_update_disk_point_position() {
 		}
 		if (!isCompleteTraverse) continue;
 
-		traverse_all_disks_update_requests_num();
-		// 更新 hotTags（并进行排序）, 利用 tagId 为 i 的请求数量进行排序。
-		for (int j = 1; j < hotTags.size(); ++j) {
-			hotTags[j] = { j, tagIdRequestNum[j] };
-		}
 		std::sort(hotTags.begin() + 1, hotTags.end(), [](const pair<int, int>& x, const pair<int, int>& y) {
 			return x.second > y.second;
 			});
@@ -731,9 +671,6 @@ bool request_need_this_block(const int& diskId, const int& unitId) {
 			it++;
 			requests.pop_front();
 			objects[objectId].timeoutRequests.push(request);
-			// 更新请求趋势图
-			const int& tagId = objects[objectId].tagId;
-			tagIdRequestNum[tagId]--;
 		} else break;
 	}
 	// 判断是否有未超时的请求需要该块
@@ -835,9 +772,6 @@ void read_action() {
 		request.arriveTime = TIMESTAMP;
 		request.hasRead = vector<bool>(objects[objectId].size + 1, false);
 		requests.push_back(request);
-		// 每来一个请求，维护当前请求趋势图
-		const int& tagId = objects[objectId].tagId;
-		tagIdRequestNum[tagId]++;
 	}
 	// 开始读取
 	update_disk_point();
@@ -877,9 +811,6 @@ void read_action() {
 					finishRequests.push_back(request.id);
 					it++; // 防在 pop_front() 前面，以防不测...或者使用 erase()
 					requests.pop_front();
-					// 每上报一个请求，更新请求趋势图
-					const int& tagId = objects[objectId].tagId;
-					tagIdRequestNum[tagId]--;
 				} else {
 					preCheck = false;
 					it++;
