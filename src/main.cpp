@@ -13,30 +13,35 @@ const int GAP = 45;
 // 下面是初始化操作
 
 // 初始化全局变量（vector 分配空间）
-void init_global_container(){
-    tags.assign(M + 1, Tag());              // Tag 没有默认构造函数，使用默认参数
-    for(int i = 1; i < tags.size(); ++i) {
-        tags[i].id = i;
-    }
-    tagIdToTagsIndex.assign(M + 1, 0);      // 运行时 M 有值，分配内存就要写在运行时。写在全局区没用会有 bug！
-    objects.resize(MAX_OBJECT_NUM + 1);     // 待留写入时初始化每个 object 对象
-    disks.assign(N + 1, Disk());
-    tagIdRequestNum.assign(M + 1, 0);
+void init_global_container()
+{
+	tags.assign(M + 1, Tag()); // Tag 没有默认构造函数，使用默认参数
+	for (int i = 1; i < tags.size(); ++i)
+	{
+		tags[i].id = i;
+	}
+	tagIdToTagsIndex.assign(M + 1, 0);	// 运行时 M 有值，分配内存就要写在运行时。写在全局区没用会有 bug！
+	objects.resize(MAX_OBJECT_NUM + 1); // 待留写入时初始化每个 object 对象
+	disks.assign(N + 1, Disk());
+	tagIdRequestNum.assign(M + 1, 0);
 }
 
 // init tags
-void pre_input_process(){
-    for (int k = 0; k < 3; ++k){
-        for (int i = 1; i <= M; i++) {
-            for (int j = 1; j <= (T - 1) / FRE_PER_SLICING + 1; j++) {
-                if(k == 0) scanf("%d", &tags[i].freDel[j]);
-                else if(k == 1) scanf("%d", &tags[i].freWrite[j]);
-                else if(k == 2) scanf("%d", &tags[i].freRead[j]);
-            }
-        }
-    }
-    printf("OK\n");
-    fflush(stdout);
+void pre_input_process() {
+	for (int k = 0; k < 3; ++k) {
+		for (int i = 1; i <= M; i++) {
+			for (int j = 1; j <= (T - 1) / FRE_PER_SLICING + 1; j++) {
+				if (k == 0)
+					scanf("%d", &tags[i].freDel[j]);
+				else if (k == 1)
+					scanf("%d", &tags[i].freWrite[j]);
+				else if (k == 2)
+					scanf("%d", &tags[i].freRead[j]);
+			}
+		}
+	}
+	printf("OK\n");
+	fflush(stdout);
 }
 
 // 根据 read 总量进行排序，高的分区放在磁盘前面。因为 write_to_random_partition 从后向前
