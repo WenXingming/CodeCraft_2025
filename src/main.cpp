@@ -1,7 +1,6 @@
 #include "global.h"
 
 // 调参
-const bool USE_LEFT_SHIFT = false;   // 使用逆序写
 const bool USE_DFS = false;
 const int DFS_DEPTH = 19;           // [1, DFS_DEPTH)
 const int GAP = 45;
@@ -264,42 +263,6 @@ bool write_one_object(const int& objectId) {
 	return true;
 }
 
-// 正常打印给判题机存储信息
-void print_common(const int& _objectId) {
-	const Object& object = objects[_objectId]; // 引用是个很危险的使用，它可以提高效率，但也有更改原始数据的风险。所以最好加 const
-	printf("%d\n", object.id);
-	for (int i = 1; i <= REP_NUM; ++i) {
-		printf("%d", object.replicaDiskId[i]);
-		for (int j = 1; j <= object.size; j++) {
-			printf(" %d", object.replicaBlockUnit[i][j]);
-		}
-		printf("\n");
-	}
-}
-
-// 与判题机交互逆序写。注：本地 object 维护的信息不变，只是告诉判题机块的写入顺序变了。搭配 cal_block_id() 使用
-void print_left_shift(const int& _objectId) {
-	const Object& object = objects[_objectId];
-	printf("%d\n", object.id);
-	for (int i = 1; i <= REP_NUM; ++i) {
-		printf("%d", object.replicaDiskId[i]);
-		// 左移输出
-		vector<int> vec = object.replicaBlockUnit[i];
-		/* int leftShiftNum = i - 1;
-		auto mid = vec.begin() + 1 + leftShiftNum; // 注：vec.size() = object.size + 1 */
-		int leftShiftNum = ((object.size - 1) / (REP_NUM - 1)) * (i - 1); // 通过偏移计算左移位数。总偏移 / 需要偏移 k 次
-		auto mid = vec.begin() + 1 + leftShiftNum;
-		if (mid >= vec.begin() + 1 && mid < vec.end()) {  // 函数要求 mid ∈ [first, last)
-			std::rotate(vec.begin() + 1, mid, vec.end());
-		} // 否则不旋转
-
-		for (int j = 1; j < vec.size(); ++j) {
-			printf(" %d", vec[j]);
-		}
-		printf("\n");
-	}
-}
-
 void write_action() {
 	// 处理输入
 	static vector<int> writeObjects(MAX_OBJECT_NUM); // 10^6 * 4 = 4MB; 存放 objectId
@@ -325,8 +288,15 @@ void write_action() {
 	// 与判题机交互
 	for (int i = 1; i <= nWrite; ++i) {
 		int objectId = writeObjects[i];
-		if (USE_LEFT_SHIFT) print_left_shift(objectId);
-		else print_common(objectId);
+		const Object& object = objects[objectId]; // 引用是个很危险的使用，它可以提高效率，但也有更改原始数据的风险。所以最好加 const
+		printf("%d\n", object.id);
+		for (int i = 1; i <= REP_NUM; ++i) {
+			printf("%d", object.replicaDiskId[i]);
+			for (int j = 1; j <= object.size; j++) {
+				printf(" %d", object.replicaBlockUnit[i][j]);
+			}
+			printf("\n");
+		}
 	}
 
 	fflush(stdout);
@@ -625,35 +595,15 @@ int cal_block_id(const int& diskId, const int& unitId) {
 	assert(replicaId != 0);
 	// 得到块的 blockId
 	int blockId = 0;
-	if (!USE_LEFT_SHIFT) {
-		// 未使用左移打印写
-		for (int i = 1; i < object.replicaBlockUnit[replicaId].size(); ++i) {
-			assert(object.size + 1 == object.replicaBlockUnit[replicaId].size());
-			if (object.replicaBlockUnit[replicaId][i] == unitId) {
-				blockId = i;
-				break;
-			}
+	for (int i = 1; i < object.replicaBlockUnit[replicaId].size(); ++i) {
+		assert(object.size + 1 == object.replicaBlockUnit[replicaId].size());
+		if (object.replicaBlockUnit[replicaId][i] == unitId) {
+			blockId = i;
+			break;
 		}
-		assert(blockId != 0); // 确保传入的 diskId、unitId、objectId 对的上，在 object 中有记录
-		return blockId;
 	}
-	if (USE_LEFT_SHIFT) {
-		// 使用逆序写（左移打印写）时，读取时也要左移（不是逆运算，右移！）相应位数，确定读取的块是第几块
-		auto vec = object.replicaBlockUnit[replicaId];
-		// int leftShiftNum = replicaId - 1;
-		// auto mid = vec.begin() + 1 + leftShiftNum; // 注：vec.size() = object.size + 1
-		int leftShiftNum = ((object.size - 1) / (REP_NUM - 1)) * (replicaId - 1); // 通过偏移计算左移位数。总偏移 / 需要偏移 k 次
-		auto mid = vec.begin() + 1 + leftShiftNum;
-		if (mid >= vec.begin() + 1 && mid < vec.end()) { // 函数要求 mid ∈ [first, last)
-			std::rotate(vec.begin() + 1, mid, vec.end());
-		} // 否则不旋转
-
-		for (int i = 1; i < vec.size(); ++i) {
-			if (vec[i] == unitId) { blockId = i; break; }
-		}
-		assert(blockId != 0); // 确保传入的 diskId、unitId、objectId 对的上，在 object 中有记录
-		return blockId;
-	}
+	assert(blockId != 0); // 确保传入的 diskId、unitId、objectId 对的上，在 object 中有记录
+	return blockId;
 }
 
 // 简单请求队列中是否需要这个块；同时处理超时请求
