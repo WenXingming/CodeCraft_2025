@@ -193,37 +193,8 @@ bool write_to_main_partition(const int& diskId, const int& objectId, const int& 
 	return true;
 }
 
-// 主分区写不下，尝试从后向前插入磁盘空隙中
-bool write_to_random_partition(const int& diskId, const int& objectId, const int& replicaId) {
-	vector<int>& diskUnits = disks[diskId].diskUnits;
-	Object& object = objects[objectId];
-	const Tag& tag = tags[object.tagId];
-	// 副本不能写入重复磁盘
-	for (int i = 1; i <= REP_NUM; ++i) {
-		if (object.replicaDiskId[i] == diskId) return false;
-	}
-	// 判断整块磁盘的剩余空间
-	int restSpace = 0;
-	for (int i = V; i >= 1; --i) {
-		if (diskUnits[i] == 0) restSpace++;
-		if (restSpace == object.size) break;
-	}
-	if (restSpace != object.size) return false;
-	// 写入磁盘：见缝插针（tricks: 从后到前见缝插针）
-	for (int i = V, cnt = 0; i >= 1 && cnt < object.size; --i) {
-		if (diskUnits[i] == 0) {
-			diskUnits[i] = objectId;
-			cnt++;
-			// 写入时注意要维护 object 信息
-			object.replicaDiskId[replicaId] = diskId;
-			object.replicaBlockUnit[replicaId][cnt] = i;
-		}
-	}
-	return true;
-}
-
 // 不采用尾部写入峰值对象，而是从分区首部往两边找空闲位置插入对象
-bool write_from_mid_sector(const int& diskId, const int& objectId, const int& replicaId) {
+bool write_from_mid_sector_to_two_sides(const int& diskId, const int& objectId, const int& replicaId) {
 	vector<int>& diskUnits = disks[diskId].diskUnits;
 	Object& object = objects[objectId];
 	const Tag& tag = tags[object.tagId];
@@ -286,24 +257,14 @@ bool write_one_object(const int& objectId) {
 			}
 		}
 		if (isWriteSucess) continue;
-#if 0
-		// 无奈，只能从后到前见缝插针
+		// 无奈，处理峰值对象，向两边扩散插入磁盘
 		for (int i = 1; i <= N; ++i) {
 			int writeDiskId = tag.update_random_disk_id();
-			if (write_to_random_partition(writeDiskId, objectId, k)) {
+			if (write_from_mid_sector_to_two_sides(writeDiskId, objectId, k)) {
 				isWriteSucess = true;
 				break;
 			}
 		}
-#else
-		for (int i = 1; i <= N; ++i) {
-			int writeDiskId = tag.update_random_disk_id();
-			if (write_from_mid_sector(writeDiskId, objectId, k)) {
-				isWriteSucess = true;
-				break;
-			}
-		}
-#endif
 		assert(isWriteSucess == true);
 	}
 	return true;
