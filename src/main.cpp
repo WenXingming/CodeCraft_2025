@@ -194,7 +194,7 @@ bool write_to_main_partition(const int& diskId, const int& objectId, const int& 
 }
 
 // 不采用尾部写入峰值对象，而是从分区首部往两边找空闲位置插入对象
-bool write_from_mid_sector_to_two_sides(const int& diskId, const int& objectId, const int& replicaId) {
+bool write_to_two_sides_partition(const int& diskId, const int& objectId, const int& replicaId) {
 	vector<int>& diskUnits = disks[diskId].diskUnits;
 	Object& object = objects[objectId];
 	const Tag& tag = tags[object.tagId];
@@ -260,7 +260,7 @@ bool write_one_object(const int& objectId) {
 		// 无奈，处理峰值对象，向两边扩散插入磁盘
 		for (int i = 1; i <= N; ++i) {
 			int writeDiskId = tag.update_random_disk_id();
-			if (write_from_mid_sector_to_two_sides(writeDiskId, objectId, k)) {
+			if (write_to_two_sides_partition(writeDiskId, objectId, k)) {
 				isWriteSucess = true;
 				break;
 			}
@@ -477,79 +477,6 @@ void traverse_all_disks_update_requests_num() {
 		}
 	}
 }
-
-#if 0
-void sync_update_disk_point_position_2() {
-	if (TIMESTAMP % GAP != 0) return;
-	traverse_all_disks_update_requests_num();
-
-	static vector<pair<int, int>> hotTags(M + 1);   // pair<int, int>: {tagId, requestNum}
-	/// 更新 hotTags（并进行排序）, 利用 tagId 为 i 的请求数量进行排序。
-	for (int i = 1; i < hotTags.size(); ++i) {
-		hotTags[i] = { i,tagIdRequestNum[i] };
-	}
-	std::sort(hotTags.begin() + 1, hotTags.end(), [](const pair<int, int>& x, const pair<int, int>& y) {
-		return x.second > y.second;
-		});
-	// 计算请求了最大的前 10 个请求的 requestsNum
-	const int NUM_OF_TAG = 4;
-	int partialRequestNum = 0;
-	for (int i = 1; i <= NUM_OF_TAG; ++i) {
-		partialRequestNum += hotTags[i].second;
-	}
-	// 计算比例，并向上取整
-	int cnt = 0;
-	for (int i = 1; i <= NUM_OF_TAG; ++i) {
-		double rate = static_cast<double>(hotTags[i].second) / partialRequestNum;
-		hotTags[i].second = static_cast<int>(std::round(rate * N)); // 可以设置 > 0.5 再向上取整
-		hotTags[i].second = (hotTags[i].second > 3 ? 3 : hotTags[i].second);
-		cnt += hotTags[i].second;
-	}
-	while (cnt < N) {
-		for (int i = 1; i <= NUM_OF_TAG; ++i) {
-			if (hotTags[i].second < 3) {
-				hotTags[i].second += 1;
-				if (++cnt >= N) break;
-			}
-		}
-	}
-	assert(cnt >= N);
-	// 分配硬盘并跳跃磁头
-	for (int i = 1, diskId = 1; i < disks.size(); ++i, diskId = (diskId + 3) % N) {
-		if (diskId == 0) diskId = N;
-		int selectTagId = 0;
-		for (int i = 1; i <= NUM_OF_TAG; ++i) {
-			if (hotTags[i].second > 0) {
-				selectTagId = hotTags[i].first;
-				hotTags[i].second--;
-				break;
-			}
-		}
-		const int& tagsIndex = tagIdToTagsIndex[selectTagId];
-		const Tag& tag = tags[tagsIndex];
-		const int& startUnit = tag.startUnit;
-		Disk& disk = disks[diskId];
-		DiskPoint& diskPoint = disk.diskPoint;
-		// 对于每一个磁头，计算消耗，判断是用 j or p
-		int j = startUnit; // 优化，找到第一个需要读的位置跳，节约令牌
-		while (!request_need_this_block(i, j)) {
-			j = j % V + 1;
-			if (j == startUnit) break; // 避免死循环，设置最大尝试次数
-		}
-
-		int distance = ((j - diskPoint.position) + V) % V; // 计算 pass 的步数。磁头只能向后 pass：startUnit - position > or < 0
-		if (distance >= diskPoint.remainToken) { // jump
-			if (!do_jump(i, j)) assert(false);
-			continue;
-		}
-		while (distance--) {  // 非 jump 就 pass
-			if (!do_pass(i)) assert(false);
-		}
-	}
-}
-#endif
-
-
 
 /// @brief 每隔 GAP 根据 tag 的请求趋势图【等信息】尝试更新（重置）所有磁头的起始 read 位置
 /// NOTE: GAP 是需要调参的，确保这个间隔可以遍历完一个区间
