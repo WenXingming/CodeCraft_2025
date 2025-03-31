@@ -20,7 +20,6 @@ void init_global_container()
 	{
 		tags[i].id = i;
 	}
-	tagIdToTagsIndex.assign(M + 1, 0);	// 运行时 M 有值，分配内存就要写在运行时。写在全局区没用会有 bug！
 	objects.resize(MAX_OBJECT_NUM + 1); // 待留写入时初始化每个 object 对象
 	disks.assign(N + 1, Disk());
 	tagIdRequestNum.assign(M + 1, 0);
@@ -42,30 +41,6 @@ void pre_input_process() {
 	}
 	printf("OK\n");
 	fflush(stdout);
-}
-
-// 根据 read 总量进行排序，高的分区放在磁盘前面。因为 write_to_random_partition 从后向前
-void sort_tags(){ 
-    // 根据阅读量排序
-    std::sort(tags.begin() + 1, tags.end(), [](const Tag& a, const Tag& b) {
-        int totalRead1 = 0, totalRead2 = 0;
-        for (int i = 1; i < a.freRead.size(); ++i){
-            totalRead1 += a.freRead[i];
-            totalRead2 += b.freRead[i];
-        }
-        return totalRead1 >= totalRead2;
-    });
-    // 把每个标签的起始磁盘不全置为 1
-    for(int i = 1; i < tags.size(); ++i){
-        tags[i].writeMainDiskId = (i % N == 0 ? i : i % N);
-    }
-    // 维护 hash 表，快速根据 tagId 找到相应 tag 对象在 tags 的索引。f(i): tagId 为 i 的 tag 对象在 tags 中的下标
-    for (int i = 1; i < tagIdToTagsIndex.size(); ++i) {
-        for (int j = 1; j < tags.size(); ++j) {
-            const Tag& tag = tags[j];
-            if (tag.id == i) { tagIdToTagsIndex[i] = j; break; }
-        }
-    }
 }
 
 // 计算每个分区的 startUnit、endUnit。NOTE: 可以按「峰值容量」or「实际容量」进行分区; 经测试「峰值容量」磁盘碎片更少，分数更高
@@ -178,8 +153,7 @@ void delete_action(){
 bool write_to_main_partition(const int& diskId, const int& objectId, const int& replicaId){
     vector<int>& diskUnits = disks[diskId].diskUnits;
     Object& object = objects[objectId];
-    int tagIndex = tagIdToTagsIndex[object.tagId];
-    const Tag& tag = tags[tagIndex];
+    const Tag& tag = tags[object.tagId];
     // 检查副本不能写入重复磁盘
     for (int i = 1; i <= REP_NUM; ++i){
         if(object.replicaDiskId[i] == diskId) return false;
@@ -236,8 +210,7 @@ bool write_to_main_partition(const int& diskId, const int& objectId, const int& 
 bool write_to_random_partition(const int& diskId, const int& objectId, const int& replicaId){
     vector<int>& diskUnits = disks[diskId].diskUnits;
     Object& object = objects[objectId];
-    const int& tagIndex = tagIdToTagsIndex[object.tagId];
-    const Tag& tag = tags[tagIndex];
+    const Tag& tag = tags[object.tagId];
     // 副本不能写入重复磁盘
     for (int i = 1; i <= REP_NUM; ++i){
         if(object.replicaDiskId[i] == diskId) return false;
@@ -266,8 +239,7 @@ bool write_to_random_partition(const int& diskId, const int& objectId, const int
 bool write_from_mid_sector(const int& diskId, const int& objectId, const int& replicaId) {
     vector<int>& diskUnits = disks[diskId].diskUnits;
     Object& object = objects[objectId];
-    const int& tagIndex = tagIdToTagsIndex[object.tagId];
-    const Tag& tag = tags[tagIndex];
+    const Tag& tag = tags[object.tagId];
 
     // 副本不能写入重复磁盘
     for (int i = 1; i <= REP_NUM; ++i){
@@ -318,8 +290,7 @@ bool write_from_mid_sector(const int& diskId, const int& objectId, const int& re
 
 bool write_one_object(const int& objectId){
     Object& object = objects[objectId];
-    const int& tagIndex = tagIdToTagsIndex[object.tagId];
-    Tag& tag = tags[tagIndex];
+    Tag& tag = tags[object.tagId];
     // 有 3 个副本
     for (int k = 1; k <= REP_NUM; ++k){
         // 遍历所有磁盘，尝试写入主分区
@@ -693,8 +664,7 @@ void sync_update_disk_point_position(){
         hotTagStartIndex = hotTagStartIndex % hotTagNum + 1;
         if(i == disks.size()-1) tagId = hotTagNum+1 < hotTags.size() ? hotTags[hotTagNum+1].first : hotTags[hotTags.size()-1].first;
 
-        const int& tagsIndex = tagIdToTagsIndex[tagId];
-        const Tag& tag = tags[tagsIndex];
+        const Tag& tag = tags[tagId];
         const int& startUnit = tag.startUnit;
         Disk& disk = disks[i];
         DiskPoint& diskPoint = disk.diskPoint;
@@ -738,8 +708,7 @@ void async_update_disk_point_position(){
             const int& diskId = useDisks[j];
             const Disk& disk = disks[diskId];
             const DiskPoint& diskPoint = disk.diskPoint;
-            const int& tagIndex = tagIdToTagsIndex[useTagId];
-            const Tag& tag = tags[tagIndex];
+            const Tag& tag = tags[useTagId];
 
             if(diskPoint.position >= tag.startUnit && diskPoint.position <= tag.endUnit){ // 可能回到磁盘头部
                 isCompleteTraverse = false;
@@ -803,8 +772,7 @@ void async_update_disk_point_position(){
             const int& diskId = useDisks[j];
             const Disk& disk = disks[diskId];
             const DiskPoint& diskPoint = disk.diskPoint;
-            const int& tagsIndex = tagIdToTagsIndex[selectTagId];
-            const Tag& tag = tags[tagsIndex];
+            const Tag& tag = tags[selectTagId];
             const int& startUnit = tag.startUnit;
             // 对于每一个磁头，计算消耗，判断是用 j or p
             int distance = ((startUnit - diskPoint.position) + V) % V; // 计算 pass 的步数。磁头只能向后 pass：startUnit - position > or < 0
@@ -1073,7 +1041,6 @@ int main()
 
     init_global_container();
     pre_input_process();
-    sort_tags();
     do_partition();
 
     for (int t = 1; t <= T + EXTRA_TIME; t++) {
