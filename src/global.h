@@ -166,9 +166,10 @@ struct Disk {
 // 具体数据结构的全局变量声明
 // ===================================================================================
 extern vector<Tag> tags;
-extern vector<Object> objects;     // (4 + 4 + 4 + 4*3 + 3*5) * MAX_OBJECT_NUM = 3.9 * 10^7 B ≈ 39 MB
-extern vector<Disk> disks;         // MAX_DISK_NUM * (MAX_DISK_SIZE + 13B) ≈ 10 * 16384 = 1.6 * 10^5 ≈ 0.16 MB
+extern vector<Object> objects;     	// (4 + 4 + 4 + 4*3 + 3*5) * MAX_OBJECT_NUM = 3.9 * 10^7 B ≈ 39 MB
+extern vector<Disk> disks;         	// MAX_DISK_NUM * (MAX_DISK_SIZE + 13B) ≈ 10 * 16384 = 1.6 * 10^5 ≈ 0.16 MB
 
+extern vector<int> tagIdRequestNum; // f(x): tagId 为 x 的请求数量
 
 // 部分函数声明
 int cal_block_id(const int& diskId, const int& unitId);
