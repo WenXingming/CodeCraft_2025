@@ -1,10 +1,9 @@
 #include "global.h"
 
 // 调参
-const bool USE_DFS = false;
-const int DFS_DEPTH = 19;           // [1, DFS_DEPTH)
-const int GAP = 45;
-// 45, 930w; 47, 930w; 50, 930w; 52, 929w; 55, 925w; 60, 920w; 65, 915w;
+constexpr bool USE_DFS = false;
+constexpr int DFS_DEPTH = 19;           // [1, DFS_DEPTH)
+constexpr int GAP = 45;
 
 // =============================================================================================
 // 下面是初始化操作
@@ -26,12 +25,9 @@ void pre_input_process() {
 	for (int k = 0; k < 3; ++k) {
 		for (int i = 1; i <= M; i++) {
 			for (int j = 1; j <= (T - 1) / FRE_PER_SLICING + 1; j++) {
-				if (k == 0)
-					scanf("%d", &tags[i].freDel[j]);
-				else if (k == 1)
-					scanf("%d", &tags[i].freWrite[j]);
-				else if (k == 2)
-					scanf("%d", &tags[i].freRead[j]);
+				if (k == 0) scanf("%d", &tags[i].freDel[j]);
+				else if (k == 1) scanf("%d", &tags[i].freWrite[j]);
+				else scanf("%d", &tags[i].freRead[j]);
 			}
 		}
 	}
@@ -600,7 +596,7 @@ void dfs(int& minCost, string& minCostActions, int cost, string actions, char pr
 bool determine_read(const int& _diskId, const int& _unitId, const int& _objectId) {
 	static std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
 
-	if (TIMESTAMP < 10000) return request_need_this_block(_diskId, _unitId);
+	// if (TIMESTAMP < 10000) return request_need_this_block(_diskId, _unitId);
 	if (request_need_this_block(_diskId, _unitId)) return true;
 
 	const Disk& disk = disks[_diskId];
@@ -610,24 +606,23 @@ bool determine_read(const int& _diskId, const int& _unitId, const int& _objectId
 
 	std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
 	int durationSeconds = std::chrono::duration_cast<std::chrono::seconds>(end - begin).count();
+	// 使用 DFS 判断是否需要读
 	if (USE_DFS && durationSeconds <= 270) { // 255s 前用 DFS，时间不够了留 40s 够了能跑完
-		// 使用 DFS 判断是否需要读
 		int minCost = INT_MAX;
 		string minCostActions = "";
 		dfs(minCost, minCostActions, 0, "", diskPoint.preAction, diskPoint.preCostToken, 1, DFS_DEPTH, _diskId, _unitId);
-		// assert(minCostActions.size() == DFS_DEPTH - 1);       // dfs生效
+		// assert(minCostActions.size() == DFS_DEPTH - 1);     	// dfs生效
 
-		if (minCostActions[0] == 'p') return false;            // 倾向于读, 这里条件太严苛, 导致 dfs 效果不明显
+		if (minCostActions[0] == 'p') return false;            	// 倾向于读, 这里条件太严苛, 导致 dfs 效果不明显。或许前几步有读就读？
 		else if (minCostActions[0] == 'r') return true;
 		else assert(false);
-		// for (int i = 0; i < minCostActions.size(); ++i){
-		//     if(minCostActions[i] == 'r') return true;
-		// }
+		
 		return false;
-	} else {
-		/// TODO: 调参。后 N 块只要有 1 块需要读，我就继续读。设想优化为后 N 块只要有 k 块需要读，我就继续读（可以设置一个比例，试了没太大用）
+	}
+	// 使用简单策略判断是否需要读
+	else {
 		int unitId = _unitId;
-		for (int i = 0; i < 8; ++i) {
+		for (int i = 0; i < 8; ++i) { // // 调参。后 N 块只要有 1 块需要读，我就继续读。设想优化为后 N 块只要有 k 块需要读，我就继续读（可以设置一个比例，试了没太大用）
 			unitId = unitId % V + 1;
 			if (request_need_this_block(_diskId, unitId)) return true;
 		}
@@ -664,7 +659,9 @@ void read_action() {
 	}
 	// 开始读取
 	update_disk_point();
-	if (TIMESTAMP % GAP == 0) { sync_update_disk_point_position(); }
+	if (TIMESTAMP % GAP == 0) {
+		sync_update_disk_point_position();
+	}
 
 	vector<int> finishRequests;
 	for (int i = 1; i < disks.size(); ++i) { // 每个磁头，串行开始读取
