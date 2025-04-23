@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.8)  # 不要修改
+cmake_minimum_required(VERSION 3.10)  # 不要修改
 project(CodeCraft)                   # 不要修改
 
 set(CMAKE_CXX_STANDARD      17)      # 不要修改
