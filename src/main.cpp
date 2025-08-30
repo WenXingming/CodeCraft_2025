@@ -1,5 +1,7 @@
 #include "global.h"
 
+// CMD: python .\2025-code-craft\run.py .\2025-code-craft\interactor\windows\interactor.exe .\2025-code-craft\data\practice.in .\src\code_craft.exe
+
 // 调参
 constexpr bool USE_DFS = false;
 constexpr int DFS_DEPTH = 19;           // [1, DFS_DEPTH)
